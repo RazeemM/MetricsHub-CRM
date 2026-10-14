@@ -5,12 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import SessionLocal
-from .routers import accounts, activities, contacts, core, dashboard, imports, opportunities, products
+from .routers import accounts, activities, contacts, core, dashboard, imports, opportunities, products, sso
 from .seed import seed
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    settings = get_settings()
+    if "localhost" not in settings.app_url and (
+        settings.secret_key.startswith("dev-only") or len(settings.secret_key) < 32
+    ):
+        raise RuntimeError("Set CRM_SECRET_KEY to a long random value before running in production")
     with SessionLocal() as db:
         seed(db)
     yield
@@ -25,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (core, accounts, contacts, products, opportunities, activities, imports, dashboard):
+for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard):
     app.include_router(r.router)
 
 

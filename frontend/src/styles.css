@@ -1,0 +1,38 @@
+body {
+  background: var(--mantine-color-gray-0);
+}
+[data-mantine-color-scheme='dark'] body {
+  background: var(--mantine-color-dark-8);
+}
+.clickable-row {
+  cursor: pointer;
+}
+.kanban {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  align-items: flex-start;
+}
+.kanban-col {
+  flex: 0 0 272px;
+  background: var(--mantine-color-gray-1);
+  border-radius: 10px;
+  padding: 8px;
+  min-height: 200px;
+}
+[data-mantine-color-scheme='dark'] .kanban-col {
+  background: var(--mantine-color-dark-6);
+}
+.kanban-col.dragging-over {
+  outline: 2px dashed var(--mantine-color-violet-4);
+}
+.brand-stripe {
+  display: inline-flex;
+  gap: 3px;
+  align-items: flex-end;
+}
+.brand-stripe span {
+  width: 4px;
+  border-radius: 2px;
+}

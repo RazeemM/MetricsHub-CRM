@@ -1,9 +1,12 @@
 """Auth, users, brands, pipelines and global search."""
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..config import get_settings
 from ..crud import apply_changes, audit, get_or_404
 from ..db import get_db
 from ..models import Account, Brand, Contact, Opportunity, Pipeline, User
@@ -16,8 +19,13 @@ router = APIRouter(prefix="/api")
 @router.post("/auth/login", response_model=Token, tags=["auth"])
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(func.lower(User.email) == form.username.strip().lower()))
+    settings = get_settings()
+    if settings.sso_enabled and not settings.password_login_enabled:
+        raise HTTPException(403, "Password login is disabled; use single sign-on")
     if not user or not user.is_active or not verify_password(form.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password")
+    user.last_login_at = dt.datetime.now(dt.UTC)
+    db.commit()
     return Token(access_token=create_access_token(user.id))
 
 
@@ -35,7 +43,7 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(get_current_user
 def create_user(data: UserCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     if db.scalar(select(User).where(func.lower(User.email) == data.email.lower())):
         raise HTTPException(409, "A user with this email already exists")
-    user = User(**data.model_dump(exclude={"password"}), password_hash=hash_password(data.password))
+    user = User(**data.model_dump(exclude={"password"}), password_hash=hash_password(data.password) if data.password else "!sso-only")
     user.email = user.email.lower()
     db.add(user)
     db.flush()

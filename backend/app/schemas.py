@@ -54,7 +54,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=8)
+    password: str | None = Field(default=None, min_length=8)  # None => SSO-only user
 
 
 class UserUpdate(BaseModel):
@@ -68,6 +68,7 @@ class UserUpdate(BaseModel):
 class UserOut(ORM, UserBase):
     id: int
     email: str
+    last_login_at: dt.datetime | None = None
 
 
 class UserRef(ORM):

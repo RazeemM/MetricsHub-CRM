@@ -50,6 +50,8 @@ class User(TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(20), default="sales")
     brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sso_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
+    last_login_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     brand: Mapped[Brand | None] = relationship()
 
 
