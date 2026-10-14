@@ -31,6 +31,13 @@ class TimestampMixin:
     )
 
 
+class ExternalRefMixin:
+    """Identity of a record in the system it was migrated from (e.g. Freshsales), for idempotent re-imports."""
+
+    external_source: Mapped[str | None] = mapped_column(String(30))
+    external_id: Mapped[str | None] = mapped_column(String(64))
+
+
 class Brand(Base):
     __tablename__ = "brands"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -55,7 +62,7 @@ class User(TimestampMixin, Base):
     brand: Mapped[Brand | None] = relationship()
 
 
-class Account(TimestampMixin, Base):
+class Account(ExternalRefMixin, TimestampMixin, Base):
     __tablename__ = "accounts"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
@@ -79,7 +86,7 @@ class Account(TimestampMixin, Base):
     contacts: Mapped[list[Contact]] = relationship(back_populates="account")
 
 
-class Contact(TimestampMixin, Base):
+class Contact(ExternalRefMixin, TimestampMixin, Base):
     __tablename__ = "contacts"
     id: Mapped[int] = mapped_column(primary_key=True)
     first_name: Mapped[str | None] = mapped_column(String(120))
@@ -112,6 +119,7 @@ class Contact(TimestampMixin, Base):
 
 
 Index("uq_contacts_email_lower", func.lower(Contact.email), unique=True)
+Index("uq_contacts_external", Contact.external_source, Contact.external_id, unique=True)
 
 
 class Product(TimestampMixin, Base):
@@ -169,7 +177,7 @@ class Stage(Base):
     pipeline: Mapped[Pipeline] = relationship(back_populates="stages")
 
 
-class Opportunity(TimestampMixin, Base):
+class Opportunity(ExternalRefMixin, TimestampMixin, Base):
     __tablename__ = "opportunities"
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(255))
@@ -355,3 +363,7 @@ class Quote(Base):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[User | None] = relationship()
+
+
+Index("uq_accounts_external", Account.external_source, Account.external_id, unique=True)
+Index("uq_opportunities_external", Opportunity.external_source, Opportunity.external_id, unique=True)

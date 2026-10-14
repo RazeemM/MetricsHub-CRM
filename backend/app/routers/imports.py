@@ -16,7 +16,7 @@ from ..db import get_db
 from ..enums import AccountType, ContactRole, LeadSource, Lifecycle
 from ..models import Account, Brand, Contact, ImportJob, Opportunity, User
 from ..schemas import ImportPreview, ImportResult
-from ..security import get_current_user, require_writer
+from ..security import get_current_user, require_admin, require_writer
 from ..services import email_domain, find_contact_by_email, find_or_create_account
 from . import accounts as accounts_router
 from . import contacts as contacts_router
@@ -365,3 +365,37 @@ def export_opportunities(fmt: Literal["csv", "xlsx"] = "xlsx", pipeline_id: int 
                      o.contract_start, o.contract_end, o.term_months, o.owner.full_name if o.owner else None,
                      "; ".join(f"{li.name} x{li.quantity.normalize()}" for li in o.line_items)])
     return _respond(headers, rows, "opportunities", fmt)
+
+
+# ---------------- Freshsales migration ----------------
+@router.post("/migrations/freshsales")
+def migrate_freshsales(
+    files: list[UploadFile] = File(..., description="Freshsales exports: contacts, accounts and/or deals"),
+    commit: bool = Form(False),
+    default_brand: Literal["METRICSHUB", "SENTRY"] = Form("METRICSHUB"),
+    default_currency: str = Form("USD"),
+    stage_map: str = Form("{}", description='JSON {"Freshsales stage": "CRM stage"}'),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    from ..migration.freshsales import from_tables, load
+
+    try:
+        overrides = json.loads(stage_map or "{}")
+    except json.JSONDecodeError:
+        raise HTTPException(422, "stage_map must be JSON") from None
+    tables = []
+    for f in files:
+        headers, rows = read_table(f)
+        tables.append((f.filename or "file", headers, rows))
+    ds = from_tables(tables)
+    rep = load(db, ds, dry_run=not commit, default_brand=default_brand,
+               default_currency=default_currency.upper()[:3], stage_overrides=overrides)
+    if commit:
+        db.add(ImportJob(entity="freshsales", filename=", ".join(t[0] for t in tables),
+                         total=len(ds.accounts) + len(ds.contacts) + len(ds.deals),
+                         created=sum(c.get("created", 0) for c in rep.as_dict()["counts"].values()),
+                         updated=sum(c.get("updated", 0) for c in rep.as_dict()["counts"].values()),
+                         skipped=0, errors=rep.warnings[:100], created_by_id=user.id))
+        db.commit()
+    return {"files": [{"name": t[0], "rows": len(t[2])} for t in tables], **rep.as_dict()}

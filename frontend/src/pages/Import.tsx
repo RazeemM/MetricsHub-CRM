@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, UserPicker } from '../components/common'
+import { FreshsalesMigration } from '../components/FreshsalesMigration'
 import { useBrands } from '../hooks'
 import { ACCOUNT_TYPES, CONTACT_ROLES, LEAD_SOURCES, LIFECYCLES, toOptions } from '../labels'
 
@@ -57,7 +58,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 export default function ImportPage() {
   const qc = useQueryClient()
-  const { canWrite } = useAuth()
+  const { canWrite, isAdmin } = useAuth()
   const { data: brands } = useBrands()
   const [step, setStep] = useState(0)
   const [entity, setEntity] = useState<'contacts' | 'accounts'>('contacts')
@@ -147,6 +148,7 @@ export default function ImportPage() {
           </>
         }
       />
+      {isAdmin && <FreshsalesMigration />}
       {canWrite && (
         <Card withBorder mb="md">
           <Stepper active={step} size="sm" mb="lg">

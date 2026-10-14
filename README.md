@@ -64,6 +64,53 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
   - Recurring products are priced per unit per month.
   - MetricsHub Enterprise at $15/host/month and the two Sentry bundles use real list prices; everything else is a placeholder.
 
+## Migrating from Freshsales
+
+The migration reads accounts, contacts and deals from Freshsales and is safe to run more than once. Each migrated record stores its Freshsales id, so a second run updates records instead of duplicating them.
+
+**1. First migration from export files.** In Freshsales, go to *Admin settings → Data management → Export* and export Accounts, Contacts and Deals with all fields. Then, as an admin, open *Import / export → Migrate from Freshsales* in the CRM:
+
+1. Drop the files.
+2. Click **Dry run**. It writes nothing and reports:
+   - counts per record type
+   - the Freshsales stage → CRM stage mapping
+   - stages that weren't recognised
+   - owners that weren't found
+   - brands and referring platforms detected
+   - open pipeline per currency
+3. Adjust the stage mapping, invite missing owners under *Users*, and dry-run again.
+4. Click **Import for real**.
+
+The same thing works from the command line:
+
+```bash
+docker compose exec api python -m app.migration.freshsales files /data/accounts.csv /data/contacts.csv /data/deals.csv
+docker compose exec api python -m app.migration.freshsales files ... --commit --stage-map stage-map.json
+```
+
+**2. Final sync on cut-over day, through the API.** Put `CRM_FRESHSALES_DOMAIN` and `CRM_FRESHSALES_API_KEY` in `.env` on the server. The key is found in Freshsales under *Profile settings → API settings*; never paste it anywhere else. Then run:
+
+```bash
+docker compose exec api python -m app.migration.freshsales api --save /tmp/freshsales.json   # dry run
+docker compose exec api python -m app.migration.freshsales api --commit
+```
+
+The API sync only reads from Freshsales; it never writes there. It follows Freshsales' limit of 1,000 requests per hour and waits automatically when that limit is reached. When the sync is done, remove the API key from `.env`.
+
+**How fields are mapped**
+
+| Freshsales | CRM |
+|---|---|
+| Owners | Matched to CRM users by email or full name. Unmatched owners are listed in the report. |
+| Lifecycle stage / status | Lead, qualified, customer or disqualified. |
+| Lead source | Lead source. "BMC", "Datadog" and the other platform names become *Platform referral*. |
+| Deal stages | Matched by keyword (won, lost, negotiation, proposal, PoC/trial, demo, discovery, new). Deals in a pipeline named "renewal" go to the Renewals pipeline. Unknown stages go to *New* and are flagged in the report. |
+| Brand | Sentry Software when the deal mentions Sentry, BMC, Helix, a KM, BHOM or BHCO; otherwise the default you choose. |
+| Referring platform | Detected from the deal source, type or name: BMC, Datadog, Splunk, Grafana, Dynatrace, New Relic, ServiceNow, Elastic. BMC deals get the route *BMC MarketZone*. |
+| Deal value | Becomes one editable line, "Imported deal value (Freshsales)", because Freshsales deals have no product lines. Replace it with real products when you next update the deal. |
+
+Notes, tasks and emails stay in Freshsales for now.
+
 ## Coming in the next phases
 
 2. Emailing quotes from the CRM, automatic renewal opportunities 120 days before contract end, and richer reports.
