@@ -295,3 +295,63 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(20))
     changes: Mapped[dict] = mapped_column(JSONB, default=dict)
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class QuoteTemplate(TimestampMixin, Base):
+    """Per-brand, admin-editable layout and wording for quotes."""
+
+    __tablename__ = "quote_templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), unique=True)
+    company_name: Mapped[str] = mapped_column(String(200))
+    address: Mapped[str | None] = mapped_column(Text)
+    vat_number: Mapped[str | None] = mapped_column(String(60))
+    registration: Mapped[str | None] = mapped_column(String(200))
+    email: Mapped[str | None] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(60))
+    website: Mapped[str | None] = mapped_column(String(200))
+    logo_data_uri: Mapped[str | None] = mapped_column(Text)
+    logo_height: Mapped[int] = mapped_column(Integer, default=36)
+    header_show_name: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    header_bg: Mapped[str] = mapped_column(String(9), default="#141A22")
+    header_text_color: Mapped[str] = mapped_column(String(9), default="#FFFFFF")
+    accent_color: Mapped[str] = mapped_column(String(9), default="#7C5CFF")
+    title: Mapped[str] = mapped_column(String(80), default="Quotation")
+    intro_text: Mapped[str | None] = mapped_column(Text)
+    terms_text: Mapped[str | None] = mapped_column(Text)
+    payment_terms: Mapped[str | None] = mapped_column(String(255))
+    validity_days: Mapped[int] = mapped_column(Integer, default=30)
+    footer_text: Mapped[str | None] = mapped_column(Text)
+    show_discount: Mapped[bool] = mapped_column(Boolean, default=True)
+    show_signature: Mapped[bool] = mapped_column(Boolean, default=True)
+    brand: Mapped[Brand] = relationship()
+
+
+class Quote(Base):
+    """An immutable snapshot of an opportunity's pricing, rendered to PDF."""
+
+    __tablename__ = "quotes"
+    __table_args__ = (UniqueConstraint("number", "version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"), index=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"))
+    number: Mapped[str] = mapped_column(String(40), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft, sent, accepted, rejected, expired
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    valid_until: Mapped[dt.date] = mapped_column(Date)
+    currency: Mapped[str] = mapped_column(String(3))
+    term_months: Mapped[int] = mapped_column(Integer)
+    contract_start: Mapped[dt.date | None] = mapped_column(Date)
+    contract_end: Mapped[dt.date | None] = mapped_column(Date)
+    customer: Mapped[dict] = mapped_column(JSONB, default=dict)
+    lines: Mapped[list] = mapped_column(JSONB, default=list)
+    amount_tcv: Mapped[Decimal] = mapped_column(Money)
+    amount_arr: Mapped[Decimal] = mapped_column(Money)
+    amount_recurring: Mapped[Decimal] = mapped_column(Money)
+    amount_one_time: Mapped[Decimal] = mapped_column(Money)
+    template: Mapped[dict] = mapped_column(JSONB, default=dict)  # snapshot so later template edits don't alter it
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[User | None] = relationship()

@@ -36,7 +36,7 @@ export const useContactSearch = (q: string, accountId?: number | null, role?: st
 /** Mutation helper: shows success/error toasts and invalidates the given query keys. */
 export function useApiMutation<TVars, TResult = unknown>(
   fn: (vars: TVars) => Promise<TResult>,
-  opts: { invalidate?: string[][]; success?: string; onSuccess?: (r: TResult) => void } = {},
+  opts: { invalidate?: unknown[][]; success?: string; onSuccess?: (r: TResult) => void } = {},
 ) {
   const qc = useQueryClient()
   return useMutation({

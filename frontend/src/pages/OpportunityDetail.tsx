@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { Activities } from '../components/Activities'
+import { Quotes } from '../components/Quotes'
 import { Field, PageHeader } from '../components/common'
 import { fromLineItem, LineItemsEditor } from '../components/LineItemsEditor'
 import { useApiMutation, usePipelines } from '../hooks'
@@ -57,7 +58,7 @@ export function StageBar({ opp, onMove, disabled }: { opp: Opportunity; onMove: 
 export default function OpportunityDetail() {
   const id = Number(useParams().id)
   const nav = useNavigate()
-  const { canWrite } = useAuth()
+  const { canWrite, isAdmin } = useAuth()
   const { data: pipelines } = usePipelines()
   const { data: o } = useQuery({ queryKey: ['opportunity', id], queryFn: () => api<Opportunity>(`/opportunities/${id}`) })
   const [lostOpen, setLostOpen] = useState(false)
@@ -214,6 +215,12 @@ export default function OpportunityDetail() {
                   No products yet. Edit the opportunity to add them.
                 </Text>
               )}
+            </Card>
+            <Card withBorder>
+              <Title order={5} mb="xs">
+                Quotes
+              </Title>
+              <Quotes opportunityId={id} hasLines={o.line_items.length > 0} isAdmin={isAdmin} />
             </Card>
             <Card withBorder>
               <Title order={5} mb="xs">

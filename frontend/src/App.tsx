@@ -15,6 +15,7 @@ import OpportunityEdit from './pages/OpportunityEdit'
 import Opportunities from './pages/Opportunities'
 import PipelineBoard from './pages/PipelineBoard'
 import Products from './pages/Products'
+import QuoteTemplates from './pages/QuoteTemplates'
 import Users from './pages/Users'
 
 function Protected({ children }: { children: ReactNode }) {
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/products" element={<Products />} />
+        <Route path="/quote-templates" element={<QuoteTemplates />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/users" element={<Users />} />
         <Route path="*" element={<Navigate to="/" replace />} />

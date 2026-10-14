@@ -94,9 +94,11 @@ def test_opportunity_pricing_and_stages(client, ref):
 
 def test_missing_price_requires_manual_price(client, ref):
     acc = _account(client, "NoPrice Corp")
+    prod = client.post("/api/products", json={"brand_id": ref["brands"]["METRICSHUB"], "sku": "TEST-NOPRICE",
+                                              "name": "Unpriced item"}).json()
     r = client.post("/api/opportunities", json={
         "title": "x", "account_id": acc["id"], "brand_id": ref["brands"]["METRICSHUB"],
-        "line_items": [{"product_id": ref["products"]["MH-PREMIER-SUP"]["id"], "quantity": 1}]})
+        "line_items": [{"product_id": prod["id"], "quantity": 1}]})
     assert r.status_code == 422
 
 

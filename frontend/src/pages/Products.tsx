@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput } from '@mantine/core'
+import { Alert, Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { IconPlus } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
@@ -177,6 +177,10 @@ export default function Products() {
   return (
     <>
       <PageHeader title="Products & pricing" subtitle="Catalog and price books used to value opportunities" />
+      <Alert variant="light" color="orange" mb="md" title="Placeholder prices">
+        Apart from MetricsHub Enterprise ($15/host/month) and the two Sentry bundles, prices are placeholders. Admins can change them under
+        Price books; new opportunities pick up the new prices, and existing ones keep theirs.
+      </Alert>
       <Tabs defaultValue="products">
         <Tabs.List>
           <Tabs.Tab value="products">Products</Tabs.Tab>

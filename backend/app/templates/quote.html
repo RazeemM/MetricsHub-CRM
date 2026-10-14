@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ t.title }} {{ q.display_number }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 0 0 22mm 0;
+    @bottom-left { content: element(footer); }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7.5pt sans-serif; color: #888; margin-right: 16mm; width: 30mm; text-align: right; white-space: nowrap; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; font-size: 9.5pt; color: #1d2330; margin: 0; }
+  .header { background: {{ t.header_bg }}; color: {{ t.header_text_color }}; padding: 12mm 16mm 9mm; display: flex; justify-content: space-between; align-items: center; }
+  .header .brand { display: flex; align-items: center; gap: 10px; }
+  .header .brand img { height: {{ t.logo_height }}px; }
+  .header .brand .name { font-size: 13pt; font-weight: 700; white-space: nowrap; }
+  .header .doc { text-align: right; }
+  .header .doc .title { font-size: 20pt; font-weight: 700; letter-spacing: .5px; }
+  .header .doc .num { font-size: 10pt; opacity: .85; }
+  .accent { height: 4px; background: {{ t.accent_color }}; }
+  .content { padding: 8mm 16mm 0; }
+  .grid { display: flex; gap: 10mm; margin-bottom: 7mm; }
+  .grid > div { flex: 1; overflow-wrap: anywhere; }
+  .grid > div.metabox { flex: 0 0 62mm; }
+  .label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .6px; color: #6b7385; font-weight: 700; margin-bottom: 2px; }
+  .meta td { padding: 1.5px 0; vertical-align: top; }
+  .meta td:first-child { color: #6b7385; padding-right: 10px; white-space: nowrap; }
+  .intro { margin-bottom: 6mm; }
+  .intro p { margin: 0 0 6px; }
+  table.lines { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
+  table.lines th { text-align: left; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .5px; color: #6b7385; border-bottom: 2px solid {{ t.accent_color }}; padding: 6px 6px; }
+  table.lines td { padding: 7px 6px; border-bottom: 1px solid #e3e6ec; vertical-align: top; }
+  table.lines .num { text-align: right; white-space: nowrap; }
+  table.lines .desc { color: #6b7385; font-size: 8.5pt; }
+  table.lines .sku { color: #8a91a1; font-size: 7.5pt; }
+  .totals { margin-left: auto; width: 46%; border-collapse: collapse; margin-bottom: 7mm; }
+  .totals td { padding: 4px 6px; }
+  .totals td:last-child { text-align: right; white-space: nowrap; }
+  .totals .grand td { border-top: 2px solid {{ t.accent_color }}; font-size: 11.5pt; font-weight: 700; padding-top: 7px; }
+  .totals .sub td { color: #6b7385; }
+  .box { border: 1px solid #e3e6ec; border-radius: 6px; padding: 4mm 5mm; margin-bottom: 5mm; page-break-inside: avoid; }
+  .terms p, .terms ul { margin: 0 0 5px; }
+  .terms ul { padding-left: 16px; }
+  .sign { display: flex; gap: 10mm; margin-top: 6mm; page-break-inside: avoid; }
+  .sign > div { flex: 1; border-top: 1px solid #9aa1b0; padding-top: 4px; font-size: 8pt; color: #6b7385; height: 16mm; }
+  .footer { position: running(footer); font-size: 7.5pt; color: #888; padding-left: 16mm; width: 140mm; }
+  .footer p { margin: 0; }
+  @media screen { .footer { display: none; } body { background: white; } }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 7pt; background: #eef0f4; color: #4a5263; }
+</style>
+</head>
+<body>
+<div class="footer">{{ t.footer_text }}</div>
+
+<div class="header">
+  <div class="brand">
+    {% if t.logo_data_uri %}<img src="{{ t.logo_data_uri }}" alt="">{% endif %}
+    {% if not t.logo_data_uri or t.header_show_name %}<span class="name">{{ t.company_name }}</span>{% endif %}
+  </div>
+  <div class="doc">
+    <div class="title">{{ t.title }}</div>
+    <div class="num">{{ q.display_number }}</div>
+  </div>
+</div>
+<div class="accent"></div>
+
+<div class="content">
+  <div class="grid">
+    <div>
+      <div class="label">From</div>
+      <strong>{{ t.company_name }}</strong><br>
+      {% if t.address %}{{ t.address | replace("\n", "<br>" | safe) }}<br>{% endif %}
+      {% if t.vat_number %}VAT: {{ t.vat_number }}<br>{% endif %}
+      {% if t.registration %}{{ t.registration }}<br>{% endif %}
+      {% if t.email %}{{ t.email }}<br>{% endif %}
+      {% if t.phone %}{{ t.phone }}<br>{% endif %}
+      {% if t.website %}{{ t.website }}{% endif %}
+    </div>
+    <div>
+      <div class="label">Prepared for</div>
+      <strong>{{ q.customer.name }}</strong><br>
+      {% if q.customer.contact_name %}{{ q.customer.contact_name }}{% if q.customer.contact_title %}, {{ q.customer.contact_title }}{% endif %}<br>{% endif %}
+      {% if q.customer.contact_email %}{{ q.customer.contact_email }}<br>{% endif %}
+      {% if q.customer.address %}{{ q.customer.address | replace("\n", "<br>" | safe) }}<br>{% endif %}
+      {% if q.customer.city or q.customer.country %}{{ [q.customer.city, q.customer.country] | select | join(", ") }}<br>{% endif %}
+      {% if q.customer.vat_number %}VAT: {{ q.customer.vat_number }}{% endif %}
+    </div>
+    <div class="metabox">
+      <table class="meta">
+        <tr><td>Quote</td><td><strong>{{ q.display_number }}</strong></td></tr>
+        <tr><td>Date</td><td>{{ date(q.issue_date) }}</td></tr>
+        <tr><td>Valid until</td><td>{{ date(q.valid_until) }}</td></tr>
+        <tr><td>Contract</td><td>{{ q.term_months }} months</td></tr>
+        {% if q.contract_start %}<tr><td>Period</td><td>{{ date(q.contract_start, True) }} – {{ date(q.contract_end, True) }}</td></tr>{% endif %}
+        <tr><td>Currency</td><td>{{ q.currency }}</td></tr>
+        {% if q.owner %}<tr><td>Contact</td><td>{{ q.owner }}</td></tr>{% endif %}
+      </table>
+    </div>
+  </div>
+
+  {% if t.intro_text %}<div class="intro">{{ t.intro_text }}</div>{% endif %}
+
+  <table class="lines">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th class="num">Qty</th>
+        <th class="num">Unit price</th>
+        {% if show_discount %}<th class="num">Discount</th>{% endif %}
+        <th class="num">Term</th>
+        <th class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ln in q.lines %}
+      <tr>
+        <td>
+          <strong>{{ ln.name }}</strong> {% if ln.sku %}<span class="sku">{{ ln.sku }}</span>{% endif %}
+          {% if ln.description %}<div class="desc">{{ ln.description }}</div>{% endif %}
+        </td>
+        <td class="num">{{ qty(ln.quantity) }}{% if ln.unit and units.get(ln.unit) %} {{ units[ln.unit] }}{% endif %}</td>
+        <td class="num">{{ money(ln.unit_price) }}{% if ln.billing_type == "recurring" %}<br><span class="badge">per month</span>{% endif %}</td>
+        {% if show_discount %}<td class="num">{% if ln.discount_pct | float > 0 %}{{ qty(ln.discount_pct) }}%{% else %}—{% endif %}</td>{% endif %}
+        <td class="num">{% if ln.billing_type == "recurring" %}{{ ln.term_months }} mo.{% else %}one-time{% endif %}</td>
+        <td class="num"><strong>{{ money(ln.line_total) }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    {% if q.one_time | float > 0 %}
+    <tr class="sub"><td>Subscriptions ({{ q.term_months }} months)</td><td>{{ money(q.recurring) }}</td></tr>
+    <tr class="sub"><td>One-time items</td><td>{{ money(q.one_time) }}</td></tr>
+    {% endif %}
+    <tr class="sub"><td>Annual recurring value</td><td>{{ money(q.arr) }}</td></tr>
+    <tr class="grand"><td>Total (excl. taxes)</td><td>{{ money(q.tcv) }}</td></tr>
+  </table>
+
+  {% if q.notes %}<div class="box"><div class="label">Notes</div>{{ q.notes }}</div>{% endif %}
+
+  {% if t.payment_terms %}<div class="box"><div class="label">Payment terms</div>{{ t.payment_terms }}</div>{% endif %}
+
+  {% if t.terms_text %}<div class="box terms"><div class="label">Terms &amp; conditions</div>{{ t.terms_text }}</div>{% endif %}
+
+  {% if t.show_signature %}
+  <div class="sign">
+    <div>Accepted for {{ q.customer.name }}<br>Name, title, date and signature</div>
+    <div>For {{ t.company_name }}<br>Name, title, date and signature</div>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

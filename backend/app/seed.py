@@ -64,13 +64,21 @@ PRODUCTS = [
      "Services per day."),
 ]
 
-# Price book name -> (brand, currency, channel, default, {sku: monthly price})
+# Price book name -> (brand, currency, channel, default, {sku: unit price})
+# Recurring products: price per unit per MONTH. One-time products: price per unit.
+# PLACEHOLDER VALUES except MH-ENT-HOST ($15/host/month public list) and the two Sentry bundles
+# (internal FY27 BMC SaaS list). Admins edit them in Products & pricing > Price books.
 PRICE_BOOKS = {
-    "MetricsHub Direct USD": ("METRICSHUB", "USD", "direct", True, {"MH-ENT-HOST": "15.00"}),
-    "MetricsHub Direct EUR": ("METRICSHUB", "EUR", "direct", False, {}),
-    # Internal FY27 BMC SaaS list prices (verify before use, never show BMC list in customer material)
-    "Sentry via BMC (USD)": ("SENTRY", "USD", "bmc", True,
-                             {"SEN-BHOM-BUNDLE": "76.35", "SEN-BHCO-BUNDLE": "90.55"}),
+    "MetricsHub Direct USD": ("METRICSHUB", "USD", "direct", True, {
+        "MH-ENT-HOST": "15.00", "MH-PREMIER-SUP": "500.00", "MH-PS-DAY": "1400.00"}),
+    "MetricsHub Direct EUR": ("METRICSHUB", "EUR", "direct", False, {
+        "MH-ENT-HOST": "14.00", "MH-PREMIER-SUP": "460.00", "MH-PS-DAY": "1300.00"}),
+    "Sentry via BMC (USD)": ("SENTRY", "USD", "bmc", True, {
+        "SEN-BHOM-BUNDLE": "76.35", "SEN-BHCO-BUNDLE": "90.55", "SEN-HW-KM": "40.00", "SEN-SA-KM": "55.00",
+        "SEN-MSX": "20.00", "SEN-STORAGE-ETL": "60.00", "SEN-BACKUP-KM": "30.00", "SEN-PS-DAY": "1500.00"}),
+    "Sentry Direct EUR": ("SENTRY", "EUR", "direct", False, {
+        "SEN-BHOM-BUNDLE": "70.00", "SEN-BHCO-BUNDLE": "83.00", "SEN-HW-KM": "37.00", "SEN-SA-KM": "50.00",
+        "SEN-MSX": "18.00", "SEN-STORAGE-ETL": "55.00", "SEN-BACKUP-KM": "27.00", "SEN-PS-DAY": "1400.00"}),
 }
 
 
@@ -115,6 +123,11 @@ def seed(db: Session) -> None:
             db.flush()
             for sku, price in prices.items():
                 db.add(PriceBookEntry(price_book_id=pb.id, product_id=products[sku].id, unit_price=Decimal(price)))
+
+    from .quotes import get_or_create_template  # local import avoids a cycle
+
+    for b in brands.values():
+        get_or_create_template(db, b.id)
 
     if not db.scalar(select(User).limit(1)):
         db.add(User(email=settings.admin_email.lower(), full_name=settings.admin_name,

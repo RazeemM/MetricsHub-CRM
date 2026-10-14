@@ -15,6 +15,7 @@ import {
   IconAddressBook,
   IconBuilding,
   IconFileImport,
+  IconFileInvoice,
   IconLayoutDashboard,
   IconLayoutKanban,
   IconLogout,
@@ -39,6 +40,7 @@ const NAV = [
   { to: '/accounts', label: 'Accounts', icon: IconBuilding },
   { to: '/contacts', label: 'Contacts', icon: IconAddressBook },
   { to: '/products', label: 'Products & pricing', icon: IconPackage },
+  { to: '/quote-templates', label: 'Quote templates', icon: IconFileInvoice },
   { to: '/import', label: 'Import / export', icon: IconFileImport },
 ]
 

@@ -9,6 +9,7 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
 | Web app | React 19, TypeScript, Vite, Mantine |
 | Auth | Email and password, plus single sign-on through OpenID Connect (Microsoft Entra ID, Google, Okta, Keycloak) |
 | Deployment | Docker Compose: Postgres, API, nginx, nightly `pg_dump` backups |
+| Quote PDFs | Jinja2 HTML template rendered by WeasyPrint |
 
 ## What's in phase 1
 
@@ -47,9 +48,25 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
   - Deals closing in the next 30 days and your open tasks.
 - **Users and roles:** admin, sales and read-only. An audit log records every change.
 
+## Quotes (phase 2, part 1)
+
+- **Quote templates** (*Quote templates* in the menu, editable by admins), one per brand:
+  - Logo upload, header and accent colours, and company details.
+  - Intro, payment terms, terms & conditions, footer, plus discount-column and signature-block switches.
+  - Live preview with sample data, a PDF preview, and a *Reset* button that restores the defaults.
+  - Placeholders such as `{customer}`, `{contact}`, `{owner}` and `{valid_until}`, and simple formatting (blank line = paragraph, `- ` = bullet, `**bold**`).
+- **Generating a quote:** use *Generate quote* on an opportunity.
+  - Numbering is per brand and year (`MH-Q-2026-0001`, `SEN-Q-2026-0001`). Later quotes on the same deal become `v2`, `v3`, and so on.
+  - Each quote freezes the lines, prices, customer and template as they are when it is generated, so later edits never change a quote that was already sent.
+  - Status: draft, sent, accepted, rejected or expired. Only drafts can be deleted.
+  - PDFs are rendered by WeasyPrint. Only embedded `data:` images may load, so rendering makes no network or file access.
+- **Placeholder prices:** every catalog product now has an editable price in Products & pricing → Price books.
+  - Recurring products are priced per unit per month.
+  - MetricsHub Enterprise at $15/host/month and the two Sentry bundles use real list prices; everything else is a placeholder.
+
 ## Coming in the next phases
 
-2. Quote PDFs (versioned, numbered per brand, emailed from the CRM), automatic renewal opportunities 120 days before contract end, and richer reports.
+2. Emailing quotes from the CRM, automatic renewal opportunities 120 days before contract end, and richer reports.
 3. Email: direct emails from Microsoft 365 logged on the timeline, a template editor with merge fields and HTML/.eml import, and campaigns with tracking and unsubscribe handling.
 4. Inbound webhooks for the website Contact, Quote, Trial, Download and Partner forms, which create or update contacts automatically.
 
