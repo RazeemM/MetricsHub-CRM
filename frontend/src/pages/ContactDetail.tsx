@@ -8,6 +8,7 @@ import { api } from '../api'
 import { useAuth } from '../auth'
 import { Activities } from '../components/Activities'
 import { Field, LifecycleBadge, PageHeader } from '../components/common'
+import { ContactEmailCard } from '../components/EmailEditor'
 import { ContactFormModal } from '../components/forms'
 import { useApiMutation, useBrands } from '../hooks'
 import { CONTACT_ROLES, fmtDate, LEAD_SOURCES } from '../labels'
@@ -99,6 +100,7 @@ export default function ContactDetail() {
               <Text size="xs" c="dimmed">Created {fmtDate(c.created_at)}</Text>
             </Stack>
           </Card>
+          <ContactEmailCard contactId={id} />
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 8 }}>
           <Activities link={{ contact_id: id }} />

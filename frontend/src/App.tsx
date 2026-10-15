@@ -7,9 +7,12 @@ import AccountDetail from './pages/AccountDetail'
 import Accounts from './pages/Accounts'
 import ContactDetail from './pages/ContactDetail'
 import Contacts from './pages/Contacts'
+import Campaigns, { CampaignDetail } from './pages/Campaigns'
 import Dashboard from './pages/Dashboard'
+import EmailTemplates, { EmailTemplateEdit } from './pages/EmailTemplates'
 import ImportPage from './pages/Import'
 import Login, { SsoCallback } from './pages/Login'
+import MailingLists, { MailingListDetail } from './pages/MailingLists'
 import OpportunityDetail from './pages/OpportunityDetail'
 import OpportunityEdit from './pages/OpportunityEdit'
 import Opportunities from './pages/Opportunities'
@@ -55,6 +58,12 @@ export default function App() {
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/products" element={<Products />} />
         <Route path="/quote-templates" element={<QuoteTemplates />} />
+        <Route path="/email/campaigns" element={<Campaigns />} />
+        <Route path="/email/campaigns/:id" element={<CampaignDetail />} />
+        <Route path="/email/templates" element={<EmailTemplates />} />
+        <Route path="/email/templates/:id" element={<EmailTemplateEdit />} />
+        <Route path="/email/lists" element={<MailingLists />} />
+        <Route path="/email/lists/:id" element={<MailingListDetail />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/users" element={<Users />} />
         <Route path="*" element={<Navigate to="/" replace />} />

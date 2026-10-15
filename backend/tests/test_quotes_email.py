@@ -122,3 +122,27 @@ def test_template_email_wording_is_editable(client):
     body["email_subject"] = "Your quote {quote_number}"
     r = client.put(f"/api/quote-templates/{tpl['brand_id']}", json=body)
     assert r.status_code == 200 and r.json()["email_subject"] == "Your quote {quote_number}"
+
+
+from tests.test_email_marketing import smtp  # noqa: E402,F401 - fake SMTP fixture
+
+
+def test_quote_email_goes_through_smtp_with_reply_to_the_user(client, ref, smtp, monkeypatch):
+    monkeypatch.setattr(quotes_router, "render_pdf", lambda html: b"%PDF-1.7 fake")
+    acc = client.post("/api/accounts", json={"name": "Smtp Quote Co"}).json()
+    ct = client.post("/api/contacts", json={"first_name": "Sam", "email": "sam@smtpquote.example",
+                                            "account_id": acc["id"]}).json()
+    opp = client.post("/api/opportunities", json={
+        "title": "SMTP quote", "account_id": acc["id"], "brand_id": ref["brands"]["METRICSHUB"],
+        "primary_contact_id": ct["id"], "line_items": [{"product_id": ref["products"]["MH-ENT-HOST"]["id"],
+                                                        "quantity": 3}]}).json()
+    q = client.post(f"/api/opportunities/{opp['id']}/quotes", json={}).json()
+    draft = client.get(f"/api/quotes/{q['id']}/email").json()
+    assert draft["enabled"] and draft["sender"] == "news@metricshub.example"
+    r = client.post(f"/api/quotes/{q['id']}/email", json={"to": ["sam@smtpquote.example"], "subject": draft["subject"],
+                                                          "body": draft["body"]})
+    assert r.status_code == 200, r.text
+    msg = smtp.sent[-1][0]
+    assert msg["Reply-To"] == "admin@example.com"
+    att = next(msg.iter_attachments())
+    assert att.get_filename().endswith(".pdf") and att.get_content() == b"%PDF-1.7 fake"

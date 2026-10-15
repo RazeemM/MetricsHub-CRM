@@ -411,5 +411,92 @@ class Notification(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MailingList(TimestampMixin, Base):
+    """A list of contacts to email: a static list (leads, an event's attendees...) or newsletter subscribers."""
+
+    __tablename__ = "mailing_lists"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), unique=True)
+    kind: Mapped[str] = mapped_column(String(16), default="list")  # list, newsletter
+    description: Mapped[str | None] = mapped_column(Text)
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="SET NULL"))
+    brand: Mapped[Brand | None] = relationship()
+
+
+class ListMember(Base):
+    __tablename__ = "mailing_list_members"
+    __table_args__ = (UniqueConstraint("list_id", "contact_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    list_id: Mapped[int] = mapped_column(ForeignKey("mailing_lists.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="subscribed")  # subscribed, unsubscribed
+    source: Mapped[str | None] = mapped_column(String(40))  # manual, filter, import, web form...
+    added_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    unsubscribed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    contact: Mapped[Contact] = relationship()
+
+
+class EmailTemplate(TimestampMixin, Base):
+    """Reusable HTML email with merge fields ({first_name}, {company}...), used by campaigns and newsletters."""
+
+    __tablename__ = "email_templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="SET NULL"))
+    subject: Mapped[str] = mapped_column(String(255))
+    preheader: Mapped[str | None] = mapped_column(String(255))  # preview text shown by mail clients
+    body_html: Mapped[str] = mapped_column(Text)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    brand: Mapped[Brand | None] = relationship()
+
+
+class Campaign(TimestampMixin, Base):
+    """A bulk email (campaign or newsletter issue). Its content is copied from a template and frozen once sent."""
+
+    __tablename__ = "campaigns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(16), default="campaign")  # campaign, newsletter
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="SET NULL"))
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("email_templates.id", ondelete="SET NULL"))
+    subject: Mapped[str] = mapped_column(String(255), default="")
+    preheader: Mapped[str | None] = mapped_column(String(255))
+    body_html: Mapped[str] = mapped_column(Text, default="")
+    from_name: Mapped[str | None] = mapped_column(String(120))
+    reply_to: Mapped[str | None] = mapped_column(String(255))
+    list_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    require_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    track_opens: Mapped[bool] = mapped_column(Boolean, default=True)
+    track_clicks: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    # draft, scheduled, sending, paused, sent, cancelled
+    scheduled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(500))  # why sending paused
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_by: Mapped[User | None] = relationship()
+
+
+class CampaignRecipient(Base):
+    __tablename__ = "campaign_recipients"
+    __table_args__ = (UniqueConstraint("campaign_id", "contact_id"),
+                      Index("ix_campaign_recipients_status", "campaign_id", "status"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"))
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), index=True)
+    email: Mapped[str] = mapped_column(String(255))
+    token: Mapped[str] = mapped_column(String(64), unique=True)  # identifies the recipient in links and the pixel
+    status: Mapped[str] = mapped_column(String(16), default="queued")  # queued, sent, failed, skipped
+    reason: Mapped[str | None] = mapped_column(String(255))  # why skipped / failed
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    opened_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    open_count: Mapped[int] = mapped_column(Integer, default=0)
+    clicked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    click_count: Mapped[int] = mapped_column(Integer, default=0)
+    unsubscribed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    contact: Mapped[Contact | None] = relationship()
+
+
 Index("uq_accounts_external", Account.external_source, Account.external_id, unique=True)
 Index("uq_opportunities_external", Opportunity.external_source, Opportunity.external_id, unique=True)

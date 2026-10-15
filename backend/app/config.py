@@ -41,8 +41,22 @@ class Settings(BaseSettings):
     graph_tenant_id: str = ""
     graph_client_id: str = ""
     graph_client_secret: str = ""
-    # Send every email from this mailbox (e.g. sales@metricshub.com) instead of the signed-in user's own
+    # Send every email from this mailbox (e.g. sales@metricshub.com) instead of the signed-in user's own.
+    # Required for SMTP, which always sends from it (replies still go to the user who sent a quote).
     mail_from: str = ""
+    mail_from_name: str = ""
+    # Campaigns and newsletters: "" = same backend as above, or smtp / graph / log / disabled
+    bulk_mail_backend: str = ""
+    bulk_rate_per_minute: int = 120  # stay under your provider's sending limit
+    # SMTP server (CRM_MAIL_BACKEND=smtp and/or CRM_BULK_MAIL_BACKEND=smtp)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_security: str = "starttls"  # starttls (port 587), ssl (port 465) or none
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_envelope_from: str = ""  # bounce address, if different from CRM_MAIL_FROM
+    # Physical address shown in every campaign footer (required by anti-spam laws such as CAN-SPAM)
+    marketing_postal_address: str = ""
 
     # Days before contract end when a renewal opportunity is opened
     renewal_lead_days: int = 120

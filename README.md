@@ -61,7 +61,7 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
   - Status: draft, sent, accepted, rejected or expired. Only drafts can be deleted.
   - PDFs are rendered by WeasyPrint. Only embedded `data:` images may load, so rendering makes no network or file access.
 - **Emailing a quote:** the envelope button on a quote opens a pre-filled message (primary contact, subject and wording from the brand's template, PDF attached).
-  - It is sent through Microsoft 365 from the signed-in user's own mailbox, so it appears in their Outlook *Sent Items* and replies come back to them. See [Emailing quotes through Microsoft 365](#emailing-quotes-through-microsoft-365).
+  - It goes through the CRM's own mail system: either Microsoft 365, from the signed-in user's own mailbox (it then appears in their Outlook *Sent Items*), or the SMTP server, from `CRM_MAIL_FROM` with replies going to the user. See [Sending email](#sending-email-smtp-or-microsoft-365).
   - A draft quote is marked *sent*, the email is logged on the opportunity's activity timeline, and the send is recorded in the audit log.
   - The email subject and message are edited per brand under *Quote templates*, with the same placeholders.
 - **Placeholder prices:** every catalog product now has an editable price in Products & pricing → Price books.
@@ -90,6 +90,29 @@ Every quarter BMC sends the *Reseller Fee Report to Sentry Software* as a PDF an
 - **Lapsed licences:** a report licence is *lapsed* only once a later imported report covers its end date and still has no renewal line. Until then it shows as *ended · awaiting next report*, because the renewal invoice may simply be in the next quarter's report. Licences added by hand lapse on their end date. Lapsed licences stay on the dashboard until someone clicks **Resolve** and notes what happened (renewed outside MarketZone, churned...). A resolved licence can be reopened from the account.
 
 The reports are BMC-confidential: keep them out of this repository and out of shared folders.
+
+## Campaigns and newsletters
+
+*Campaigns*, *Email templates* and *Mailing lists* in the menu send bulk email through the CRM's own mail system.
+
+- **Email templates:** reusable HTML designs per brand, started from a *Newsletter*, *Announcement* or *Blank* starter, or pasted/loaded from a designer's .html file, with a live desktop/mobile preview.
+  - Merge fields: `{first_name}`, `{last_name}`, `{full_name}`, `{company}`, `{job_title}`, `{country}`, `{owner}`, `{email}`, `{postal_address}`, `{unsubscribe_url}`. A fallback is written `{first_name|there}`. Merged values are HTML-escaped.
+- **Mailing lists:** a *contact list* (leads in a region, event attendees...) or *newsletter subscribers*.
+  - Fill a list by filter (lifecycle, role, account type, country, brand, consent), from contacts, or by CSV import (`email`, optional `first_name`, `last_name`, `company`). Unknown addresses become new leads.
+  - When importing, tick *they agreed to receive marketing email* only if they really did: it is recorded on each contact.
+- **Campaigns:** pick a template (its content is copied into the campaign and can be adjusted), one or more lists, the from name and reply-to address.
+  - **Send test** sends to up to 5 addresses with sample values.
+  - **Send now** or **Schedule**. The recipients are fixed at that moment, and sending runs in the background at `CRM_BULK_RATE_PER_MINUTE`. It survives restarts and can be paused, resumed or cancelled. If the SMTP server cannot be reached, the campaign pauses with the error and nothing is lost.
+  - The report shows sent, opened, clicked, unsubscribed, failed and skipped (with the reason) per recipient. Opens are approximate because mail apps block or pre-load images; clicks are reliable.
+  - Each contact's page shows their lists and the campaigns they received.
+- **Who is never emailed:**
+  - contacts without an address, or with the same address twice (each address gets one copy)
+  - contacts who unsubscribed from all marketing email
+  - list members marked unsubscribed
+  - for newsletters, and for campaigns with *Only contacts with marketing consent*: contacts without consent. Newsletter subscribers count as consenting.
+- **Unsubscribe:** every email carries an unsubscribe link and the `List-Unsubscribe` / one-click headers that Gmail and Outlook show as an *Unsubscribe* button. A template without `{unsubscribe_url}` gets a footer added automatically.
+  - The link opens a confirmation page, because mail scanners follow links. Confirming unsubscribes the contact from all marketing email and every list, and is noted on their timeline.
+- **Tracking links** are signed, so they cannot be used to redirect people to other sites. Tracking can be turned off per campaign.
 
 ## Migrating from Freshsales
 
@@ -141,7 +164,7 @@ Notes, tasks and emails stay in Freshsales for now.
 ## Coming in the next phases
 
 2. Automatic renewal opportunities 120 days before contract end, and richer reports.
-3. Email: direct emails from Microsoft 365 logged on the timeline, a template editor with merge fields and HTML/.eml import, and campaigns with tracking and unsubscribe handling.
+3. Email: one-to-one emails from a contact's page logged on the timeline, bounce handling, and .eml import of templates.
 4. Inbound webhooks for the website Contact, Quote, Trial, Download and Partner forms, which create or update contacts automatically.
 
 ## Run it locally (development)
@@ -206,6 +229,38 @@ docker compose exec -T db pg_restore -U crm -d crm --clean < backups/crm-YYYYMMD
    - For two separate tenants (one for Sentry Software, one for MetricsHub), register the app as multitenant and use `https://login.microsoftonline.com/organizations/v2.0` as the issuer. The CRM then checks each token against the signing user's own tenant. Keep `CRM_OIDC_AUTO_PROVISION_DOMAINS` set, so only your two domains can create accounts.
 
 The flow is the authorization code flow with PKCE. The ID token is verified against the provider's published signing keys (audience, issuer and nonce). The CRM then issues its own session token, which is passed back in the URL fragment so it never appears in server logs.
+
+## Sending email (SMTP or Microsoft 365)
+
+The CRM sends two kinds of email, each through a backend you choose in `.env`:
+
+| Setting | Used for | Values |
+|---|---|---|
+| `CRM_MAIL_BACKEND` | quotes and notifications | `smtp`, `graph` (Microsoft 365), `log` (keep, don't send), `disabled` |
+| `CRM_BULK_MAIL_BACKEND` | campaigns and newsletters | same values; empty = same as `CRM_MAIL_BACKEND` |
+
+A common setup: quotes through Microsoft 365 from each user's own mailbox (`graph`), campaigns through an email service's SMTP relay (`smtp`), which is built for bulk sending and keeps your Microsoft 365 domain's reputation separate.
+
+**SMTP settings** (restart the API after changing them, then use *Send test* on a campaign):
+
+```
+CRM_SMTP_HOST=smtp-relay.brevo.com       # Microsoft 365: smtp.office365.com  ·  SendGrid: smtp.sendgrid.net
+CRM_SMTP_PORT=587
+CRM_SMTP_SECURITY=starttls               # starttls (587) · ssl (465) · none (local relay only)
+CRM_SMTP_USERNAME=...
+CRM_SMTP_PASSWORD=...
+CRM_MAIL_FROM=news@metricshub.com         # SMTP always sends from this address; it must be verified with the provider
+CRM_MAIL_FROM_NAME=MetricsHub
+CRM_BULK_RATE_PER_MINUTE=120             # stay under the provider's limit (Microsoft 365 SMTP: 30 per minute)
+CRM_MARKETING_POSTAL_ADDRESS=MetricsHub S.A.S., [street], [city], France
+```
+
+Before the first campaign:
+
+- **Authenticate your domain** with the provider: SPF, DKIM and DMARC DNS records. Without them, campaigns land in spam.
+- **Microsoft 365 SMTP** (`smtp.office365.com`) needs SMTP AUTH enabled for the sending mailbox and is limited to about 10,000 recipients a day. That is fine for quotes, not for large newsletters.
+- **Postal address:** anti-spam laws (CAN-SPAM, and good practice under GDPR) expect your postal address in every marketing email. Set `CRM_MARKETING_POSTAL_ADDRESS`; the starters print it through `{postal_address}`.
+- **Public links:** open and click tracking and the unsubscribe page use `CRM_APP_URL`, so it must be the public HTTPS address people can reach.
 
 ## Emailing quotes through Microsoft 365
 

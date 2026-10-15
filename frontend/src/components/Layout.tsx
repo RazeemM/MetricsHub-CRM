@@ -18,6 +18,9 @@ import {
   IconFileInvoice,
   IconLayoutDashboard,
   IconLayoutKanban,
+  IconListDetails,
+  IconMail,
+  IconMailCog,
   IconLogout,
   IconMoon,
   IconPackage,
@@ -43,6 +46,9 @@ const NAV = [
   { to: '/contacts', label: 'Contacts', icon: IconAddressBook },
   { to: '/products', label: 'Products & pricing', icon: IconPackage },
   { to: '/quote-templates', label: 'Quote templates', icon: IconFileInvoice },
+  { to: '/email/campaigns', label: 'Campaigns', icon: IconMail },
+  { to: '/email/templates', label: 'Email templates', icon: IconMailCog },
+  { to: '/email/lists', label: 'Mailing lists', icon: IconListDetails },
   { to: '/import', label: 'Import / export', icon: IconFileImport },
 ]
 

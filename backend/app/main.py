@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .db import SessionLocal
 from .routers import (
-    accounts, activities, contacts, core, dashboard, entitlements, imports, opportunities, products, quotes, sso,
+    accounts, activities, contacts, core, dashboard, email, entitlements, imports, opportunities, products, public,
+    quotes, sso,
 )
 from .jobs import scheduler
 from .seed import seed
@@ -37,7 +38,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements):
+for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements,
+          email, public):
     app.include_router(r.router)
 
 
