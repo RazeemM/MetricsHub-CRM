@@ -3,11 +3,12 @@ import { useDisclosure } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
 import { IconEdit, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { Activities } from '../components/Activities'
 import { AccountTypeBadge, Field, LifecycleBadge, PageHeader } from '../components/common'
+import { AccountLicences } from '../components/Licences'
 import { AccountFormModal, ContactFormModal } from '../components/forms'
 import { useApiMutation } from '../hooks'
 import { CONTACT_ROLES, fmtDate, money } from '../labels'
@@ -17,6 +18,7 @@ export default function AccountDetail() {
   const id = Number(useParams().id)
   const nav = useNavigate()
   const { canWrite } = useAuth()
+  const [params, setParams] = useSearchParams()
   const [editOpen, edit] = useDisclosure()
   const [contactOpen, contactModal] = useDisclosure()
   const { data: acc } = useQuery({ queryKey: ['account', id], queryFn: () => api<Account>(`/accounts/${id}`) })
@@ -108,14 +110,18 @@ export default function AccountDetail() {
           </Card>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 8 }}>
-          <Tabs defaultValue="contacts">
+          <Tabs value={params.get('tab') ?? (isPlatform ? 'contacts' : 'licences')} onChange={(v) => setParams(v ? { tab: v } : {}, { replace: true })}>
             <Tabs.List>
+              {!isPlatform && <Tabs.Tab value="licences">Licences</Tabs.Tab>}
               <Tabs.Tab value="contacts">Contacts ({contacts?.total ?? 0})</Tabs.Tab>
               <Tabs.Tab value="opps">
                 {isPlatform ? 'Referred deals' : 'Opportunities'} ({opps?.total ?? 0})
               </Tabs.Tab>
               <Tabs.Tab value="activity">Activity</Tabs.Tab>
             </Tabs.List>
+            <Tabs.Panel value="licences" pt="sm">
+              <AccountLicences accountId={id} />
+            </Tabs.Panel>
             <Tabs.Panel value="contacts" pt="sm">
               {canWrite && (
                 <Group justify="flex-end" mb="xs">

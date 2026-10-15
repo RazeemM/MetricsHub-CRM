@@ -31,6 +31,8 @@ import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
+import { fmtDate } from '../labels'
+import { NotificationsBell } from './Licences'
 import { Logo } from './Logo'
 
 const NAV = [
@@ -45,7 +47,11 @@ const NAV = [
 ]
 
 interface SearchResult {
-  accounts: { id: number; name: string }[]
+  accounts: {
+    id: number
+    name: string
+    licences: { products: { product: string; quantity: string; renewal_date: string | null; status: string }[]; next_renewal: string | null; lapsed: number } | null
+  }[]
   contacts: { id: number; name: string; email: string }[]
   opportunities: { id: number; name: string }[]
 }
@@ -62,7 +68,17 @@ function GlobalSearch() {
   const groups = data
     ? [
         { group: 'Opportunities', items: data.opportunities.map((o) => ({ value: `/opportunities/${o.id}`, label: o.name })) },
-        { group: 'Accounts', items: data.accounts.map((a) => ({ value: `/accounts/${a.id}`, label: a.name })) },
+        {
+          group: 'Accounts',
+          items: data.accounts.map((a) => ({
+            value: a.licences ? `/accounts/${a.id}?tab=licences` : `/accounts/${a.id}`,
+            label: a.licences
+              ? `${a.name} · ${a.licences.products.length} product${a.licences.products.length === 1 ? '' : 's'}` +
+                (a.licences.next_renewal ? ` · renews ${fmtDate(a.licences.next_renewal)}` : '') +
+                (a.licences.lapsed ? ` · ${a.licences.lapsed} lapsed` : '')
+              : a.name,
+          })),
+        },
         {
           group: 'Contacts',
           items: data.contacts.map((c) => ({ value: `/contacts/${c.id}`, label: `${c.name}${c.email ? ` · ${c.email}` : ''}` })),
@@ -108,6 +124,7 @@ export default function Layout() {
           </Group>
           <GlobalSearch />
           <Group gap="xs" wrap="nowrap">
+            <NotificationsBell />
             <ActionIcon variant="subtle" onClick={toggleColorScheme} aria-label="Toggle color scheme">
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </ActionIcon>

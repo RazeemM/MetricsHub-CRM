@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..config import get_settings
 from ..crud import apply_changes, audit, get_or_404
 from ..db import get_db
+from ..entitlements import account_summary
 from ..models import Account, Brand, Contact, Opportunity, Pipeline, User
 from ..schemas import BrandOut, PipelineOut, Token, UserCreate, UserOut, UserUpdate
 from ..security import create_access_token, get_current_user, hash_password, require_admin, verify_password
@@ -83,8 +84,11 @@ def search(q: str, db: Session = Depends(get_db), _: User = Depends(get_current_
         Contact.email.ilike(term), Contact.first_name.ilike(term), Contact.last_name.ilike(term),
         func.concat(Contact.first_name, " ", Contact.last_name).ilike(term))).limit(8))
     opps = db.scalars(select(Opportunity).where(Opportunity.title.ilike(term)).limit(8))
+    accounts = list(accounts)
+    licences = account_summary(db, [a.id for a in accounts])
     return {
-        "accounts": [{"id": a.id, "name": a.name, "type": a.account_type} for a in accounts],
+        "accounts": [{"id": a.id, "name": a.name, "type": a.account_type, "licences": licences.get(a.id)}
+                     for a in accounts],
         "contacts": [{"id": c.id, "name": c.full_name, "email": c.email} for c in contacts],
         "opportunities": [{"id": o.id, "name": o.title} for o in opps],
     }

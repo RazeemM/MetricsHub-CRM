@@ -8,6 +8,7 @@ import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, UserPicker } from '../components/common'
 import { FreshsalesMigration } from '../components/FreshsalesMigration'
+import { MzdImport } from '../components/Licences'
 import { useBrands } from '../hooks'
 import { ACCOUNT_TYPES, CONTACT_ROLES, LEAD_SOURCES, LIFECYCLES, toOptions } from '../labels'
 
@@ -148,6 +149,7 @@ export default function ImportPage() {
           </>
         }
       />
+      {isAdmin && <MzdImport />}
       {isAdmin && <FreshsalesMigration />}
       {canWrite && (
         <Card withBorder mb="md">

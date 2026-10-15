@@ -1,5 +1,6 @@
 import os
 
+os.environ.setdefault("CRM_RUN_SCHEDULER", "false")
 os.environ.setdefault("CRM_DATABASE_URL", "postgresql+psycopg://crm:crm@localhost:5432/crm_test")
 
 import pytest  # noqa: E402

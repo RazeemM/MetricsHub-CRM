@@ -367,5 +367,50 @@ class Quote(Base):
     created_by: Mapped[User | None] = relationship()
 
 
+class Entitlement(TimestampMixin, Base):
+    """One licence line a customer owns (e.g. one line of a BMC MarketZone fee report).
+
+    A customer's holding of a product is the set of its lines for that product: see entitlements.holdings()."""
+
+    __tablename__ = "entitlements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    reseller_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"))
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"))
+    product_name: Mapped[str] = mapped_column(String(255))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    license_type: Mapped[str] = mapped_column(String(16), default="term")  # term, support, saas, perpetual
+    start_date: Mapped[dt.date | None] = mapped_column(Date)
+    end_date: Mapped[dt.date] = mapped_column(Date, index=True)
+    net_amount: Mapped[Decimal | None] = mapped_column(Money)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    source: Mapped[str] = mapped_column(String(40), default="manual")  # bmc_mzd, manual
+    source_ref: Mapped[str | None] = mapped_column(String(80))  # invoice / credit memo number
+    document_date: Mapped[dt.date | None] = mapped_column(Date)  # invoice date: tells how far a report reaches
+    report_name: Mapped[str | None] = mapped_column(String(255))
+    line_key: Mapped[str | None] = mapped_column(String(400), unique=True)  # makes report imports idempotent
+    renewal_notified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    lapse_resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    lapse_resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    lapse_resolution: Mapped[str | None] = mapped_column(Text)
+
+    account: Mapped[Account] = relationship(foreign_keys=[account_id])
+    reseller: Mapped[Account | None] = relationship(foreign_keys=[reseller_id])
+    lapse_resolved_by: Mapped[User | None] = relationship()
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(40))  # renewal_due, ...
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(255))  # path in the web app
+    read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 Index("uq_accounts_external", Account.external_source, Account.external_id, unique=True)
 Index("uq_opportunities_external", Opportunity.external_source, Opportunity.external_id, unique=True)

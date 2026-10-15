@@ -46,6 +46,10 @@ class Settings(BaseSettings):
 
     # Days before contract end when a renewal opportunity is opened
     renewal_lead_days: int = 120
+    # Days before a licence's renewal date when its owner is notified (about 2 months)
+    renewal_notice_days: int = 60
+    # Run the daily renewal check inside the API process (disable when running it from cron instead)
+    run_scheduler: bool = True
 
 
 @lru_cache

@@ -68,6 +68,25 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
   - Recurring products are priced per unit per month.
   - MetricsHub Enterprise at $15/host/month and the two Sentry bundles use real list prices; everything else is a placeholder.
 
+## Customer licences from BMC MarketZone reports
+
+Every quarter BMC sends the *Reseller Fee Report to Sentry Software* (PDF). An admin loads it under *Import / export → BMC MarketZone report*: **Dry run** shows what will be created, **Import licences** saves it. Loading the same report again changes nothing.
+
+- **Reading the report:** each invoice or credit-memo line becomes a licence on the customer's account (the *Ordering Company*). The line records the product, quantity, Term/Support/SaaS, service period and net amount. The report's own section totals are used to check that every line was read correctly.
+- **Accounts:** customers are matched to existing accounts by name, ignoring legal suffixes such as Ltd, Inc or GmbH. Customers not found are created as *customer* accounts. When the *Billing Company* is different, it is recorded as the reseller (an account of type *reseller*).
+- **What a customer owns:** the account's **Licences** tab shows one row per product:
+  - the quantity for the current period, with credit memos subtracted
+  - the renewal date: the end of the last period already invoiced, so a prepaid multi-year deal shows its final year
+  - a status: active, renewal due, ended · awaiting next report, lapsed, or starts later
+  - the reseller
+
+  Global search shows the number of products, the next renewal date and any lapsed licences next to each account. Licences can also be added by hand, for example for direct sales.
+- **Renewal notices:** 60 days before a licence's renewal date (`CRM_RENEWAL_NOTICE_DAYS`), the CRM notifies the owner of the account's open renewal opportunity. If there is none, it notifies the account owner, and failing that, the administrators. The notice appears under the bell and is also emailed when email is set up. It is sent once per renewal. The check runs inside the API every few hours; to run it from cron instead, set `CRM_RUN_SCHEDULER=false` and run `docker compose exec api python -m app.jobs renewals`.
+- **Instalments:** periods shorter than about 6 months, such as quarterly SaaS billing, are instalments, not contract ends, so they don't trigger renewal notices.
+- **Lapsed licences:** a report licence is *lapsed* only once a later imported report covers its end date and still has no renewal line. Until then it shows as *ended · awaiting next report*, because the renewal invoice may simply be in the next quarter's report. Licences added by hand lapse on their end date. Lapsed licences stay on the dashboard until someone clicks **Resolve** and notes what happened (renewed outside MarketZone, churned...). A resolved licence can be reopened from the account.
+
+The reports are BMC-confidential: keep them out of this repository and out of shared folders.
+
 ## Migrating from Freshsales
 
 The migration reads accounts, contacts and deals from Freshsales and is safe to run more than once. Each migrated record stores its Freshsales id, so a second run updates records instead of duplicating them.

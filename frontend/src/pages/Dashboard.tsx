@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader } from '../components/common'
+import { LapsedLicencesCard } from '../components/Licences'
 import { useBrands } from '../hooks'
 import { fmtDate, money } from '../labels'
 
@@ -111,6 +112,7 @@ export default function Dashboard() {
               {s.win_rate_12m}%
             </Stat>
           </SimpleGrid>
+          <LapsedLicencesCard />
           <Grid>
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Card withBorder h="100%">

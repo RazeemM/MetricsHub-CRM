@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -5,7 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import SessionLocal
-from .routers import accounts, activities, contacts, core, dashboard, imports, opportunities, products, quotes, sso
+from .routers import (
+    accounts, activities, contacts, core, dashboard, entitlements, imports, opportunities, products, quotes, sso,
+)
+from .jobs import scheduler
 from .seed import seed
 
 
@@ -18,7 +22,10 @@ async def lifespan(_: FastAPI):
         raise RuntimeError("Set CRM_SECRET_KEY to a long random value before running in production")
     with SessionLocal() as db:
         seed(db)
+    task = asyncio.create_task(scheduler()) if settings.run_scheduler else None
     yield
+    if task:
+        task.cancel()
 
 
 app = FastAPI(title="MetricsHub & Sentry CRM", version="0.1.0", lifespan=lifespan)
@@ -30,7 +37,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes):
+for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements):
     app.include_router(r.router)
 
 
