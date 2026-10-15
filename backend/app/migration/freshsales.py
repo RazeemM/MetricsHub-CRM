@@ -9,6 +9,7 @@ so running the migration again updates records instead of duplicating them. Run 
 
 CLI:
   python -m app.migration.freshsales files contacts.csv accounts.xlsx deals.csv [--commit]
+  python -m app.migration.freshsales files path/to/export-folder [--commit]   (full export, incl. relation tables)
   CRM_FRESHSALES_DOMAIN=acme CRM_FRESHSALES_API_KEY=... python -m app.migration.freshsales api [--commit]
 """
 from __future__ import annotations
@@ -79,7 +80,7 @@ COLS = {
         "probability": ["probability", "probability (%)", "win probability"],
         "expected_close": ["expected close date", "expected close", "close date"],
         "closed_date": ["closed date", "closed on", "won/lost date"],
-        "account_ext_id": ["account id", "sales account id"],
+        "account_ext_id": ["account id", "sales account id", "account name id"],
         "account_name": ["account", "sales account", "account name", "company"],
         "owner": ["sales owner", "owner", "deal owner"],
         "lost_reason": ["lost reason", "deal reason", "reason"],
@@ -105,6 +106,20 @@ def detect_entity(headers: list[str]) -> str:
     return "account"
 
 
+def detect_link_table(headers: list[str]) -> str | None:
+    """Full Freshsales exports also contain relation tables (Deal_contacts.csv, Account_contacts.csv, ...)."""
+    h = {_norm(x) for x in headers if _norm(x)}
+    if {"deal id", "contact id"} <= h:
+        return "deal_contacts"
+    if {"sales account id", "contact id"} <= h:
+        return "account_contacts"
+    if {"contact id", "email"} <= h:
+        return "contact_emails"
+    if "contact id" in h and not h & {"first name", "last name", "emails"}:
+        return "ignored"  # subscriptions, other phone numbers...
+    return None
+
+
 def map_row(entity: str, row: dict) -> dict:
     lookup = {_norm(k): (str(v).strip() if v is not None else "") for k, v in row.items()}
     out = {}
@@ -119,17 +134,45 @@ class Dataset:
     accounts: list[dict] = field(default_factory=list)
     contacts: list[dict] = field(default_factory=list)
     deals: list[dict] = field(default_factory=list)
+    ignored_files: list[str] = field(default_factory=list)
 
 
 def from_tables(tables: list[tuple[str, list[str], list[dict]]]) -> Dataset:
-    """tables: (filename, headers, rows). Entity is detected from the headers or the file name."""
+    """tables: (filename, headers, rows). Entity is detected from the headers or the file name.
+
+    Relation tables from a full export are merged into the entity rows: deal contacts, contact accounts and
+    primary emails."""
     ds = Dataset()
+    deal_contacts: dict[str, list[str]] = {}
+    contact_account: dict[str, str] = {}
+    contact_email: dict[str, str] = {}
     for name, headers, rows in tables:
+        link = detect_link_table(headers)
+        if link:
+            for r in rows:
+                v = {_norm(k): str(x or "").strip() for k, x in r.items()}
+                if link == "deal_contacts" and v.get("contact id"):
+                    deal_contacts.setdefault(v["deal id"], []).append(v["contact id"])
+                elif link == "account_contacts":
+                    if v.get("is primary", "").lower() in ("true", "yes", "1") or v["contact id"] not in contact_account:
+                        contact_account[v["contact id"]] = v["sales account id"]
+                elif link == "contact_emails" and v.get("email"):
+                    if v.get("primary?", "").lower() in ("true", "yes", "1") or v["contact id"] not in contact_email:
+                        contact_email[v["contact id"]] = v["email"]
+            if link == "ignored":
+                ds.ignored_files.append(name)
+            continue
         n = name.lower()
         entity = ("deal" if "deal" in n else "contact" if "contact" in n else "account" if "account" in n
                   else detect_entity(headers))
         target = {"account": ds.accounts, "contact": ds.contacts, "deal": ds.deals}[entity]
         target.extend(map_row(entity, r) for r in rows)
+    for c in ds.contacts:
+        c["account_ext_id"] = c["account_ext_id"] or contact_account.get(c["ext_id"], "")
+        c["email"] = c["email"] or contact_email.get(c["ext_id"], "")
+    for d in ds.deals:
+        if not d["contacts"] and d["ext_id"] in deal_contacts:
+            d["contacts"] = ",".join(deal_contacts[d["ext_id"]])
     return ds
 
 
@@ -446,10 +489,9 @@ def load(db: Session, ds: Dataset, *, dry_run: bool = True, default_brand: str =
         return a
 
     # ---- accounts
-    for r in ds.accounts:
+    def load_account(r: dict) -> str:
         if not r["name"]:
-            rep.counts["accounts"]["skipped (no name)"] += 1
-            continue
+            return "skipped (no name)"
         a = acc_by_ext.get(r["ext_id"]) if r["ext_id"] else None
         created = False
         if not a:
@@ -473,7 +515,16 @@ def load(db: Session, ds: Dataset, *, dry_run: bool = True, default_brand: str =
         if r["ext_id"]:
             acc_by_ext[r["ext_id"]] = a
         acc_by_name.setdefault(a.name.lower(), a)
-        rep.counts["accounts"]["created" if created else "updated"] += 1
+        return "created" if created else "updated"
+
+    for r in ds.accounts:
+        try:
+            with db.begin_nested():
+                result = load_account(r)
+        except Exception as exc:  # noqa: BLE001 - one bad row must not stop the migration
+            result = "failed"
+            rep.warn(f"Account {r.get('name')}: {type(exc).__name__}: {str(exc)[:120]}")
+        rep.counts["accounts"][result] += 1
 
     # ---- contacts
     ct_by_ext = {c.external_id: c for c in db.scalars(select(Contact).where(Contact.external_source == SOURCE))}
@@ -506,6 +557,8 @@ def load(db: Session, ds: Dataset, *, dry_run: bool = True, default_brand: str =
             if (r["account_ext_id"] or r["account_name"]) else None
         if not acc and email and (dom := email_domain(email)):
             acc = next((a for a in acc_by_name.values() if a.domain == dom), None)
+        if "partner" in r["lifecycle"].lower():
+            c.role = "partner_contact"
         if acc:
             c.account_id = acc.id
             if acc.account_type == "platform_partner":
@@ -658,7 +711,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.mode == "files":
-        ds = from_tables([_read_file(p) for p in args.paths])
+        files = [f for p in args.paths for f in (sorted(x for x in p.rglob("*") if x.suffix.lower() in
+                                                        (".csv", ".xlsx")) if p.is_dir() else [p])]
+        ds = from_tables([_read_file(p) for p in files])
+        if ds.ignored_files:
+            print(f"Not migrated: {', '.join(ds.ignored_files)}", file=sys.stderr)
     else:
         domain, key = os.environ.get("CRM_FRESHSALES_DOMAIN"), os.environ.get("CRM_FRESHSALES_API_KEY")
         if not (domain and key):

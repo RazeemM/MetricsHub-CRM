@@ -92,10 +92,12 @@ def read_table(upload: UploadFile) -> tuple[list[str], list[dict]]:
             except UnicodeDecodeError:
                 continue
         try:
-            dialect = csv.Sniffer().sniff(text[:5000], delimiters=",;\t|")
+            delimiter = csv.Sniffer().sniff(text[:5000], delimiters=",;\t|").delimiter
         except csv.Error:
-            dialect = csv.excel
-        reader = csv.reader(io.StringIO(text), dialect)
+            delimiter = ","
+        # Only the delimiter is sniffed: the sniffer often guesses doublequote=False, which splits quoted
+        # multi-line notes containing "" into bogus rows (seen in Freshsales exports).
+        reader = csv.reader(io.StringIO(text, newline=""), csv.excel, delimiter=delimiter)
         rows = [r for r in reader if any(c.strip() for c in r)]
         if not rows:
             return [], []

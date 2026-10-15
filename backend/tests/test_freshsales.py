@@ -136,3 +136,27 @@ def test_api_client_against_fake_freshsales(client):
     assert deal["stage"]["name"] == "Negotiation" and deal["currency"] == "EUR"
     assert Decimal(deal["amount_tcv"]) == Decimal("12000.50") and deal["primary_contact"]["email"] == "api.person@api11.example"
     assert all(req.method == "GET" for req in calls)  # read-only
+
+
+def test_full_export_relation_tables_are_merged():
+    """A full Freshsales export ships relation tables next to the entity files; they must not become contacts."""
+    from app.migration.freshsales import from_tables
+
+    contacts = [{"Id": "1", "First name": "Ana", "Last name": "Lopez", "Emails": "", "Account id": "",
+                 "Lifecycle stage": "Partner", "": ""}]
+    deals = [{"Id": "50", "Name": "Deal A", "Deal value": "10", "Deal stage": "Won", "Account name id": "900",
+              "Account name": "Acme"}]
+    ds = from_tables([
+        ("Contacts.csv", list(contacts[0]), contacts),
+        ("Deals.csv", list(deals[0]), deals),
+        ("Deal_contacts.csv", ["Id", "Deal id", "Contact id"], [{"Id": "7", "Deal id": "50", "Contact id": "1"}]),
+        ("Account_contacts.csv", ["Id", "Sales Account id", "Contact id", "Is Primary"],
+         [{"Id": "8", "Sales Account id": "900", "Contact id": "1", "Is Primary": "true"}]),
+        ("Contact_emails.csv", ["Contact id", "Email", "Primary?", "Email status", "Label"],
+         [{"Contact id": "1", "Email": "ana@acme.example", "Primary?": "true", "Email status": "", "Label": ""}]),
+        ("Contact_subscriptions.csv", ["Contact id", "Subscription types", "Unsubscription types"], []),
+    ])
+    assert len(ds.contacts) == 1 and len(ds.deals) == 1 and ds.accounts == []
+    assert ds.contacts[0]["email"] == "ana@acme.example" and ds.contacts[0]["account_ext_id"] == "900"
+    assert ds.deals[0]["contacts"] == "1" and ds.deals[0]["account_ext_id"] == "900"
+    assert ds.ignored_files == ["Contact_subscriptions.csv"]
