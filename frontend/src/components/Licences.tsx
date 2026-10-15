@@ -350,7 +350,6 @@ interface ImportResult {
   accounts_matched: Record<string, string>
   accounts_created: string[]
   resellers: Record<string, string>
-  products_unmatched: string[]
   totals_checked: number
   warnings: string[]
   preview: { customer: string; account: string; product: string; type: string; quantity: string; start: string; end: string; reseller: string | null; document: string }[]

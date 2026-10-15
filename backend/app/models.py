@@ -377,8 +377,7 @@ class Entitlement(TimestampMixin, Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
     reseller_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"))
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"))
-    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"))
-    product_name: Mapped[str] = mapped_column(String(255))
+    product_name: Mapped[str] = mapped_column(String(255))  # as named in the report: the entitled product
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     license_type: Mapped[str] = mapped_column(String(16), default="term")  # term, support, saas, perpetual
     start_date: Mapped[dt.date | None] = mapped_column(Date)

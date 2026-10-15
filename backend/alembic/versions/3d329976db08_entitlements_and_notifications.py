@@ -39,7 +39,6 @@ def upgrade() -> None:
     sa.Column('account_id', sa.Integer(), nullable=False),
     sa.Column('reseller_id', sa.Integer(), nullable=True),
     sa.Column('brand_id', sa.Integer(), nullable=False),
-    sa.Column('product_id', sa.Integer(), nullable=True),
     sa.Column('product_name', sa.String(length=255), nullable=False),
     sa.Column('quantity', sa.Numeric(precision=14, scale=2), nullable=False),
     sa.Column('license_type', sa.String(length=16), nullable=False),
@@ -61,7 +60,6 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['account_id'], ['accounts.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['brand_id'], ['brands.id'], ),
     sa.ForeignKeyConstraint(['lapse_resolved_by_id'], ['users.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['product_id'], ['products.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['reseller_id'], ['accounts.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('line_key')

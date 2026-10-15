@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from . import mail
 from .config import get_settings
-from .models import Account, Brand, Entitlement, Notification, Opportunity, Pipeline, Product, Stage, User
+from .models import Account, Brand, Entitlement, Notification, Opportunity, Pipeline, Stage, User
 from .mzd_report import Report
 
 LEGAL = re.compile(r"\b(inc|incorporated|llc|ltd|limited|plc|corp|corporation|co|kg|gmbh|ag|sa|s a|sas|bv|b v|nv|"
@@ -33,7 +33,6 @@ class Holding:
     account_id: int
     account_name: str
     product_name: str
-    product_id: int | None
     license_type: str
     quantity: Decimal
     period_start: dt.date | None
@@ -92,7 +91,7 @@ def _holding(lines: list[Entitlement], today: dt.date, notice_days: int, report_
     reseller = next((e.reseller.name for e in sorted(lines, key=lambda e: e.end_date, reverse=True) if e.reseller), None)
     return Holding(
         account_id=latest.account_id, account_name=latest.account.name, product_name=latest.product_name,
-        product_id=latest.product_id, license_type=latest.license_type, quantity=sum(shown.values(), Decimal(0)),
+        license_type=latest.license_type, quantity=sum(shown.values(), Decimal(0)),
         period_start=min((p[0] for p in shown if p[0]), default=None), period_end=max((p[1] for p in shown), default=None),
         renewal_date=renewal, status=status, installments=installments, days_to_renewal=days, reseller=reseller,
         latest_line_id=latest.id,
@@ -126,7 +125,6 @@ class ImportResult:
     accounts_matched: dict = field(default_factory=dict)   # report name -> CRM account name
     accounts_created: list = field(default_factory=list)
     resellers: dict = field(default_factory=dict)
-    products_unmatched: list = field(default_factory=list)
     totals_checked: int = 0
     warnings: list = field(default_factory=list)
     preview: list = field(default_factory=list)
@@ -165,10 +163,8 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
     res = ImportResult(dry_run=dry_run, report=report.title or report_name, lines=len(report.lines),
                        totals_checked=report.checked_totals, warnings=list(report.warnings))
     brand = db.scalar(select(Brand).where(Brand.code == "SENTRY"))
-    products = {norm_name(p.name): p for p in db.scalars(select(Product).where(Product.brand_id == brand.id))}
     existing = set(db.scalars(select(Entitlement.line_key).where(Entitlement.line_key.is_not(None))))
     matcher = AccountMatcher(db)
-    unmatched: set[str] = set()
     for ln in report.lines:
         if ln.key in existing:
             res.already_imported += 1
@@ -185,12 +181,9 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
         if ln.billing_company and norm_name(ln.billing_company) != norm_name(ln.customer):
             reseller, r_created = matcher.get_or_create(ln.billing_company, ln.country, "reseller")
             res.resellers.setdefault(ln.billing_company, reseller.name + (" (new)" if r_created else ""))
-        product = products.get(norm_name(ln.product))
-        if not product:
-            unmatched.add(ln.product)
         db.add(Entitlement(
             account_id=acc.id, reseller_id=reseller.id if reseller else None, brand_id=brand.id,
-            product_id=product.id if product else None, product_name=ln.product, quantity=ln.quantity,
+            product_name=ln.product, quantity=ln.quantity,
             license_type=ln.license_type, start_date=ln.start, end_date=ln.end, net_amount=ln.net, currency="USD",
             source="bmc_mzd", source_ref=ln.doc_number, document_date=ln.doc_date, report_name=report_name,
             line_key=ln.key))
@@ -201,7 +194,6 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
                                 "end": ln.end, "reseller": reseller.name if reseller else None,
                                 "document": ln.doc_number})
     res.accounts_created = sorted(set(res.accounts_created))
-    res.products_unmatched = sorted(unmatched)
     db.flush()
     if dry_run:
         db.rollback()

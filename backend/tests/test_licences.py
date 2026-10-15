@@ -157,7 +157,7 @@ def test_upload_endpoint_rejects_non_reports(client):
 
 def _ent(qty, start, end, source="bmc_mzd"):
     from types import SimpleNamespace
-    return SimpleNamespace(id=1, account_id=1, account=SimpleNamespace(name="X"), product_name="P", product_id=None,
+    return SimpleNamespace(id=1, account_id=1, account=SimpleNamespace(name="X"), product_name="P",
                            license_type="saas", quantity=Decimal(qty), start_date=start, end_date=end, source=source,
                            reseller=None, lapse_resolved_at=None, lapse_resolution=None, lapse_resolved_by=None)
 

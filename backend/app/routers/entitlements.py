@@ -22,7 +22,6 @@ class HoldingOut(BaseModel):
     account_id: int
     account_name: str
     product_name: str
-    product_id: int | None
     license_type: str
     quantity: Decimal
     period_start: dt.date | None
