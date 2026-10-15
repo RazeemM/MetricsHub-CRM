@@ -1,10 +1,12 @@
 import dataclasses
 import datetime as dt
+import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from .. import entitlements as ent
@@ -15,6 +17,7 @@ from ..mzd_report import ReportError, parse
 from ..security import get_current_user, require_admin, require_writer
 
 router = APIRouter(prefix="/api", tags=["licences"])
+log = logging.getLogger("crm.licences")
 MAX_PDF = 20_000_000
 
 
@@ -45,7 +48,7 @@ class LineOut(BaseModel):
     quantity: Decimal
     license_type: str
     start_date: dt.date | None
-    end_date: dt.date
+    end_date: dt.date | None
     net_amount: Decimal | None
     currency: str
     source: str
@@ -64,7 +67,13 @@ class EntitlementIn(BaseModel):
     quantity: Decimal
     license_type: str = Field(default="term", pattern="^(term|support|saas|perpetual|other)$")
     start_date: dt.date | None = None
-    end_date: dt.date
+    end_date: dt.date | None = None
+
+    @model_validator(mode="after")
+    def end_needed(self):
+        if self.end_date is None and self.license_type != "perpetual":
+            raise ValueError("an end / renewal date is needed (only perpetual licences have none)")
+        return self
 
 
 class ResolveIn(BaseModel):
@@ -79,7 +88,7 @@ def _h(h: ent.Holding) -> HoldingOut:
 def account_licences(account_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     get_or_404(db, Account, account_id)
     lines = db.scalars(select(Entitlement).where(Entitlement.account_id == account_id)
-                       .order_by(Entitlement.end_date.desc(), Entitlement.product_name))
+                       .order_by(Entitlement.end_date.desc().nulls_last(), Entitlement.product_name))
     return AccountLicences(holdings=[_h(h) for h in ent.holdings(db, [account_id])], lines=list(lines))
 
 
@@ -143,15 +152,29 @@ def reopen_lapse(line_id: int, db: Session = Depends(get_db), user: User = Depen
 @router.post("/licences/import/bmc-mzd")
 def import_mzd(file: UploadFile = File(...), commit: bool = Form(False), db: Session = Depends(get_db),
                user: User = Depends(require_admin)):
-    """Import a BMC MarketZone quarterly reseller fee report (PDF). Dry run unless commit=true."""
+    """Import a BMC MarketZone quarterly reseller fee report (PDF or Detail .xlsx). Dry run unless commit=true.
+
+    A report with problems (lines that could not be read, totals that do not add up) is never saved: the dry run
+    lists the problems, and the Detail .xlsx of the same quarter can be imported instead."""
     raw = file.file.read(MAX_PDF + 1)
     if len(raw) > MAX_PDF:
         raise HTTPException(413, "File too large (max 20 MB)")
     try:
-        report = parse(raw)
+        report = parse(raw, file.filename or "")
     except ReportError as exc:
         raise HTTPException(422, str(exc)) from None
-    res = ent.import_report(db, report, file.filename or "MarketZone report", dry_run=not commit)
+    except Exception:  # noqa: BLE001 - a malformed file must never become a 500
+        log.exception("Could not read report %s", file.filename)
+        raise HTTPException(422, "Could not read this file. Is it a MarketZone report (PDF or Detail .xlsx)?") from None
+    if commit and not report.reliable:
+        raise HTTPException(422, f"Not imported: {len(report.warnings)} problem(s) reading this report. Run a dry run "
+                                 "to see them, or import the Detail .xlsx of the same quarter instead.")
+    try:
+        res = ent.import_report(db, report, file.filename or "MarketZone report", dry_run=not commit)
+    except DBAPIError:
+        db.rollback()
+        log.exception("Report import failed for %s", file.filename)
+        raise HTTPException(422, "Some values in this report could not be saved. Nothing was imported.") from None
     if commit:
         audit(db, user, "entitlement_import", 0, "bmc_mzd", {"file": file.filename, "created": res.created,
                                                              "already_imported": res.already_imported})

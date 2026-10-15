@@ -70,9 +70,12 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
 
 ## Customer licences from BMC MarketZone reports
 
-Every quarter BMC sends the *Reseller Fee Report to Sentry Software* (PDF). An admin loads it under *Import / export → BMC MarketZone report*: **Dry run** shows what will be created, **Import licences** saves it. Loading the same report again changes nothing.
+Every quarter BMC sends the *Reseller Fee Report to Sentry Software* as a PDF and, since September 2024, a *Detail* .xlsx with the same lines. An admin loads either under *Import / export → BMC MarketZone report*: **Dry run** shows what will be created, **Import licences** saves it. Loading the same report again, or both files of the same quarter, changes nothing.
 
-- **Reading the report:** each invoice or credit-memo line becomes a licence on the customer's account (the *Ordering Company*). The line records the product, quantity, Term/Support/SaaS, service period and net amount. The report's own section totals are used to check that every line was read correctly.
+- **Prefer the Detail .xlsx:** it is exact. PDFs from December 2024 onward, and June 2024, read the same lines as their .xlsx. The tighter layout of older PDFs (March 2020, March 2024, September 2024) cannot be read reliably.
+- **Nothing half-right is saved:** if any line cannot be read, or a section total of the report does not match the lines read, the dry run lists the problems and the import is refused. Load the .xlsx of that quarter instead.
+
+- **Reading the report:** each invoice or credit-memo line becomes a licence on the customer's account (the *Ordering Company*). The line records the product (as named in the report), quantity, Term/Support/SaaS/License, service period and net amount. The report's own section totals are used to check that every line was read correctly.
 - **Accounts:** customers are matched to existing accounts by name, ignoring legal suffixes such as Ltd, Inc or GmbH. Customers not found are created as *customer* accounts. When the *Billing Company* is different, it is recorded as the reseller (an account of type *reseller*).
 - **What a customer owns:** the account's **Licences** tab shows one row per product:
   - the quantity for the current period, with credit memos subtracted
@@ -83,6 +86,7 @@ Every quarter BMC sends the *Reseller Fee Report to Sentry Software* (PDF). An a
   Global search shows the number of products, the next renewal date and any lapsed licences next to each account. Licences can also be added by hand, for example for direct sales.
 - **Renewal notices:** 60 days before a licence's renewal date (`CRM_RENEWAL_NOTICE_DAYS`), the CRM notifies the owner of the account's open renewal opportunity. If there is none, it notifies the account owner, and failing that, the administrators. The notice appears under the bell and is also emailed when email is set up. It is sent once per renewal. The check runs inside the API every few hours; to run it from cron instead, set `CRM_RUN_SCHEDULER=false` and run `docker compose exec api python -m app.jobs renewals`.
 - **Instalments:** periods shorter than about 6 months, such as quarterly SaaS billing, are instalments, not contract ends, so they don't trigger renewal notices.
+- **Perpetual licences** ("License" / "PERPETUAL" lines) are owned for good: they have no renewal date, never lapse and send no notice. Their maintenance appears as a separate *Support* licence of the same product, which does renew.
 - **Lapsed licences:** a report licence is *lapsed* only once a later imported report covers its end date and still has no renewal line. Until then it shows as *ended · awaiting next report*, because the renewal invoice may simply be in the next quarter's report. Licences added by hand lapse on their end date. Lapsed licences stay on the dashboard until someone clicks **Resolve** and notes what happened (renewed outside MarketZone, churned...). A resolved licence can be reopened from the account.
 
 The reports are BMC-confidential: keep them out of this repository and out of shared folders.

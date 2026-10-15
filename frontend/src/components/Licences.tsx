@@ -23,7 +23,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
-import { IconBell, IconCheck, IconFileTypePdf, IconPlus, IconTrash } from '@tabler/icons-react'
+import { IconBell, IconCheck, IconFileUpload, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -41,7 +41,7 @@ export interface Holding {
   period_start: string | null
   period_end: string | null
   renewal_date: string | null
-  status: 'active' | 'renewal_due' | 'awaiting_report' | 'lapsed' | 'upcoming' | 'cancelled'
+  status: 'active' | 'renewal_due' | 'awaiting_report' | 'lapsed' | 'upcoming' | 'perpetual' | 'cancelled'
   installments: boolean
   days_to_renewal: number | null
   reseller: string | null
@@ -58,7 +58,7 @@ interface Line {
   quantity: string
   license_type: string
   start_date: string | null
-  end_date: string
+  end_date: string | null
   net_amount: string | null
   currency: string
   source: string
@@ -72,6 +72,7 @@ export const LICENCE_STATUS: Record<Holding['status'], { label: string; color: s
   awaiting_report: { label: 'Ended · awaiting next report', color: 'yellow' },
   lapsed: { label: 'Lapsed', color: 'red' },
   upcoming: { label: 'Starts later', color: 'blue' },
+  perpetual: { label: 'Perpetual', color: 'teal' },
   cancelled: { label: 'Credited', color: 'gray' },
 }
 
@@ -107,7 +108,7 @@ export function AccountLicences({ accountId }: { accountId: number }) {
     () =>
       api(`/accounts/${accountId}/licences`, {
         method: 'POST',
-        body: { ...form, quantity: Number(form.quantity), start_date: form.start_date || null },
+        body: { ...form, quantity: Number(form.quantity), start_date: form.start_date || null, end_date: form.end_date || null },
       }),
     { invalidate: [key, ['licences-lapsed']], success: 'Licence added', onSuccess: () => setAdding(false) },
   )
@@ -208,7 +209,7 @@ export function AccountLicences({ accountId }: { accountId: number }) {
                   <Table.Td>{l.product_name}</Table.Td>
                   <Table.Td ta="right">{qty(l.quantity)}</Table.Td>
                   <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                    {fmtDate(l.start_date)} – {fmtDate(l.end_date)}
+                    {l.end_date ? `${fmtDate(l.start_date)} – ${fmtDate(l.end_date)}` : fmtDate(l.start_date)}
                   </Table.Td>
                   <Table.Td ta="right">{l.net_amount !== null ? `${Number(l.net_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${l.currency}` : '—'}</Table.Td>
                   <Table.Td>{l.source === 'bmc_mzd' ? `${l.source_ref} · ${l.report_name}` : 'Added by hand'}</Table.Td>
@@ -232,10 +233,17 @@ export function AccountLicences({ accountId }: { accountId: number }) {
             <NumberInput label="Quantity" required value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
             <Select label="Type" data={Object.entries(TYPES).map(([value, label]) => ({ value, label }))} value={form.license_type} onChange={(v) => setForm({ ...form, license_type: v ?? 'term' })} allowDeselect={false} />
             <TextInput label="Start" type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-            <TextInput label="End / renewal date" type="date" required value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+            <TextInput
+              label="End / renewal date"
+              type="date"
+              required={form.license_type !== 'perpetual'}
+              description={form.license_type === 'perpetual' ? 'Not needed for a perpetual licence' : undefined}
+              value={form.end_date}
+              onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+            />
           </SimpleGrid>
           <Group justify="flex-end">
-            <Button loading={add.isPending} disabled={!form.product_name || !form.end_date} onClick={() => add.mutate(undefined)}>
+            <Button loading={add.isPending} disabled={!form.product_name || (!form.end_date && form.license_type !== 'perpetual')} onClick={() => add.mutate(undefined)}>
               Add
             </Button>
           </Group>
@@ -343,6 +351,8 @@ export function LapsedLicencesCard() {
 
 interface ImportResult {
   dry_run: boolean
+  source: 'pdf' | 'xlsx'
+  reliable: boolean
   report: string
   lines: number
   created: number
@@ -372,37 +382,47 @@ export function MzdImport() {
     <Card withBorder mb="md">
       <Title order={5}>BMC MarketZone report (licences)</Title>
       <Text size="sm" c="dimmed" mb="sm">
-        Load the quarterly “Reseller Fee Report to Sentry Software” PDF. Each line becomes a licence on the customer's account (quantity, period, renewal date). Loading the same report twice changes nothing.
+        Load the quarterly “Reseller Fee Report to Sentry Software”: the Detail .xlsx (exact, preferred) or the PDF. Each line becomes a licence on the customer's account (quantity, period, renewal date). Loading the same report twice changes nothing, so the PDF and .xlsx of one quarter can both be loaded.
       </Text>
       <Dropzone
         onDrop={(f) => {
           setFile(f[0])
           setResult(null)
         }}
-        accept={['application/pdf']}
+        accept={['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']}
         maxFiles={1}
         maxSize={20_000_000}
       >
         <Group justify="center" gap="xs" mih={60} style={{ pointerEvents: 'none' }}>
-          <IconFileTypePdf size={28} stroke={1.5} />
-          <Text size="sm">{file ? file.name : 'Drop the report PDF here or click to choose'}</Text>
+          <IconFileUpload size={28} stroke={1.5} />
+          <Text size="sm">{file ? file.name : 'Drop the report (.xlsx or .pdf) here or click to choose'}</Text>
         </Group>
       </Dropzone>
       <Group mt="sm">
         <Button variant="default" disabled={!file} loading={run.isPending && !run.variables} onClick={() => run.mutate(false)}>
           Dry run
         </Button>
-        <Button disabled={!file || !result?.dry_run || result.created === 0} loading={run.isPending && !!run.variables} onClick={() => run.mutate(true)}>
+        <Button disabled={!file || !result?.dry_run || !result.reliable || result.created === 0} loading={run.isPending && !!run.variables} onClick={() => run.mutate(true)}>
           Import licences
         </Button>
       </Group>
       {result && (
         <Stack gap="xs" mt="md">
-          <Alert color={result.dry_run ? 'blue' : 'green'} variant="light" title={result.dry_run ? 'Dry run: nothing saved yet' : 'Imported'}>
+          <Alert
+            color={!result.reliable ? 'red' : result.dry_run ? 'blue' : 'green'}
+            variant="light"
+            title={!result.reliable ? 'This report cannot be imported' : result.dry_run ? 'Dry run: nothing saved yet' : 'Imported'}
+          >
+            {!result.reliable && (
+              <Text size="sm" mb={4}>
+                Some lines could not be read reliably (listed below), so nothing will be saved.{' '}
+                {result.source === 'pdf' ? 'Load the Detail .xlsx of the same quarter instead.' : 'Check the file with BMC.'}
+              </Text>
+            )}
             {result.lines} lines read ({result.totals_checked} report totals cross-checked) · {result.created} new · {result.already_imported} already imported
           </Alert>
           {result.warnings.length > 0 && (
-            <Alert color="orange" variant="light" title="Check these lines">
+            <Alert color="orange" variant="light" title={result.reliable ? 'Notes' : 'Problems'}>
               <List size="xs">
                 {result.warnings.map((w) => (
                   <List.Item key={w}>{w}</List.Item>

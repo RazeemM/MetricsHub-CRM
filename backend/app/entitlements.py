@@ -56,6 +56,22 @@ INSTALMENT_DAYS = 200  # a paid period shorter than this (quarterly, half-yearly
 def _holding(lines: list[Entitlement], today: dt.date, notice_days: int, report_cutoff: dt.date | None) -> Holding:
     """report_cutoff: latest invoice date in the imported MarketZone reports. A report licence that ended after it
     may still have been renewed by an invoice the next report will show, so it is not lapsed yet."""
+    latest = max(lines, key=lambda e: (e.end_date or dt.date.min, e.id))
+    reseller = next((e.reseller.name for e in sorted(lines, key=lambda e: e.end_date or dt.date.min, reverse=True)
+                     if e.reseller), None)
+    common = dict(
+        account_id=latest.account_id, account_name=latest.account.name, product_name=latest.product_name,
+        license_type=latest.license_type, reseller=reseller, latest_line_id=latest.id,
+        resolved=latest.lapse_resolved_at is not None, resolution=latest.lapse_resolution,
+        resolved_by=latest.lapse_resolved_by.full_name if latest.lapse_resolved_by else None,
+        resolved_at=latest.lapse_resolved_at, lines=[e.id for e in lines])
+    if latest.license_type == "perpetual":
+        # owned for good: no renewal date, never lapses (its maintenance is a separate Support licence)
+        qty = sum((e.quantity for e in lines), Decimal(0))
+        return Holding(**common, quantity=qty, period_start=min((e.start_date for e in lines if e.start_date),
+                                                                default=None),
+                       period_end=None, renewal_date=None, status="perpetual" if qty > 0 else "cancelled",
+                       installments=False, days_to_renewal=None)
     periods: dict[tuple, Decimal] = defaultdict(Decimal)
     for e in lines:
         periods[(e.start_date, e.end_date)] += e.quantity
@@ -87,17 +103,10 @@ def _holding(lines: list[Entitlement], today: dt.date, notice_days: int, report_
         status = "renewal_due"
     else:
         status = "active"
-    latest = max(lines, key=lambda e: (e.end_date, e.id))
-    reseller = next((e.reseller.name for e in sorted(lines, key=lambda e: e.end_date, reverse=True) if e.reseller), None)
     return Holding(
-        account_id=latest.account_id, account_name=latest.account.name, product_name=latest.product_name,
-        license_type=latest.license_type, quantity=sum(shown.values(), Decimal(0)),
+        **common, quantity=sum(shown.values(), Decimal(0)),
         period_start=min((p[0] for p in shown if p[0]), default=None), period_end=max((p[1] for p in shown), default=None),
-        renewal_date=renewal, status=status, installments=installments, days_to_renewal=days, reseller=reseller,
-        latest_line_id=latest.id,
-        resolved=latest.lapse_resolved_at is not None, resolution=latest.lapse_resolution,
-        resolved_by=latest.lapse_resolved_by.full_name if latest.lapse_resolved_by else None,
-        resolved_at=latest.lapse_resolved_at, lines=[e.id for e in lines])
+        renewal_date=renewal, status=status, installments=installments, days_to_renewal=days)
 
 
 def holdings(db: Session, account_ids: list[int] | None = None, today: dt.date | None = None) -> list[Holding]:
@@ -107,7 +116,9 @@ def holdings(db: Session, account_ids: list[int] | None = None, today: dt.date |
         stmt = stmt.where(Entitlement.account_id.in_(account_ids))
     groups: dict[tuple, list[Entitlement]] = defaultdict(list)
     for e in db.scalars(stmt):
-        groups[(e.account_id, e.product_name.lower())].append(e)
+        # a perpetual licence and the support/term lines of the same product are separate holdings
+        kind = "perpetual" if e.license_type == "perpetual" else "renewable"
+        groups[(e.account_id, e.product_name.lower(), kind)].append(e)
     days = get_settings().renewal_notice_days
     cutoff = db.scalar(select(func.max(Entitlement.document_date)).where(Entitlement.source == "bmc_mzd"))
     out = [_holding(lines, today, days, cutoff) for lines in groups.values()]
@@ -119,6 +130,8 @@ def holdings(db: Session, account_ids: list[int] | None = None, today: dt.date |
 class ImportResult:
     dry_run: bool
     report: str
+    source: str = "pdf"
+    reliable: bool = True  # False: problems reading the report, it can only be dry-run
     lines: int = 0
     created: int = 0
     already_imported: int = 0
@@ -152,7 +165,7 @@ class AccountMatcher:
         a = self.find(name)
         if a:
             return a, False
-        a = Account(name=name.strip(), country=country or None, account_type=account_type, extra={})
+        a = Account(name=name.strip()[:255], country=(country or "")[:80] or None, account_type=account_type, extra={})
         self.db.add(a)
         self.db.flush()
         self.by_norm[norm_name(name)] = a
@@ -160,16 +173,22 @@ class AccountMatcher:
 
 
 def import_report(db: Session, report: Report, report_name: str, *, dry_run: bool = True) -> ImportResult:
-    res = ImportResult(dry_run=dry_run, report=report.title or report_name, lines=len(report.lines),
+    res = ImportResult(dry_run=dry_run, report=report.title or report_name, source=report.source,
+                       reliable=report.reliable, lines=len(report.lines),
                        totals_checked=report.checked_totals, warnings=list(report.warnings))
     brand = db.scalar(select(Brand).where(Brand.code == "SENTRY"))
     existing = set(db.scalars(select(Entitlement.line_key).where(Entitlement.line_key.is_not(None))))
     matcher = AccountMatcher(db)
+    seen: dict[str, int] = {}
     for ln in report.lines:
-        if ln.key in existing:
+        # a report can hold identical lines (same invoice, product, period, quantity, amount): number the repeats,
+        # so they all count, yet the PDF and the .xlsx of one quarter still recognise each other
+        seen[ln.key] = seen.get(ln.key, 0) + 1
+        key = ln.key if seen[ln.key] == 1 else f"{ln.key}|{seen[ln.key]}"
+        if key in existing:
             res.already_imported += 1
             continue
-        existing.add(ln.key)
+        existing.add(key)
         acc, created = matcher.get_or_create(ln.customer, ln.country, "customer")
         if created:
             res.accounts_created.append(ln.customer)
@@ -186,7 +205,7 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
             product_name=ln.product, quantity=ln.quantity,
             license_type=ln.license_type, start_date=ln.start, end_date=ln.end, net_amount=ln.net, currency="USD",
             source="bmc_mzd", source_ref=ln.doc_number, document_date=ln.doc_date, report_name=report_name,
-            line_key=ln.key))
+            line_key=key))
         res.created += 1
         if len(res.preview) < 200:
             res.preview.append({"customer": ln.customer, "account": acc.name, "product": ln.product,

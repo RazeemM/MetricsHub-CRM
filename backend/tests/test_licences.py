@@ -13,32 +13,111 @@ from app.mzd_report import Report, ReportLine
 TODAY = dt.date.today()
 
 
-def _w(x0, text, top=200.0):
-    return {"x0": x0, "x1": x0 + 4.2 * len(text), "top": top, "bottom": top + 7, "text": text}
+def _xlsx(rows) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+    wb = Workbook()
+    for r in rows:
+        wb.active.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
-def test_parse_line_splits_columns_by_gaps():
-    words = []
-    for x, cell in [(107, "INV00012345"), (181, "5/25/26"), (239, "Acme Widgets B.V. & Co. KG"), (461, "Germany"),
-                    (574, "Partner Reseller GmbH"), (786, "Sentry Hardware Analyzer for TrueSight Operations Management"),
-                    (1121, "Term"), (1192, "4/1/2026"), (1244, "3/31/2027"), (1306, "365"), (1393, "8,777"),
-                    (1424, "200,223.94"), (1482, "102,114.21")]:
-        for i, t in enumerate(cell.split()):  # words of one cell are close together
-            words.append(_w(x + sum(4.2 * len(p) + 4 for p in cell.split()[:i]), t))
-    line = mzd_report.parse_line(mzd_report._cells(words), 2)
-    assert line.customer == "Acme Widgets B.V. & Co. KG" and line.billing_company == "Partner Reseller GmbH"
-    assert line.product == "Sentry Hardware Analyzer for TrueSight Operations Management"
-    assert line.license_type == "term" and line.start == dt.date(2026, 4, 1) and line.end == dt.date(2027, 3, 31)
-    assert line.quantity == Decimal("8777") and line.net == Decimal("200223.94")
+NEW_HEADER = ["Inv Cm Number", "Inv Cm Date", "Ordering Company (Subscription Owner)", "Sold To Country",
+              "Billing Company (Invoice Owner)", "Product Name", "Product Rate Plan Charge Revenue Type",
+              "Inv Service Start Date", "Inv Service End Date", "Maintenance term (days)", "INV CM Quantity Metric",
+              "Total Net", "Fee"]
 
 
-def test_rejects_other_pdfs():
+def test_detail_xlsx_with_totals_credits_and_perpetual():
+    data = _xlsx([
+        NEW_HEADER,
+        ["INV00012345", dt.datetime(2026, 5, 25), "Acme Widgets B.V. & Co. KG", "Germany", "Partner Reseller GmbH",
+         "Sentry Hardware Analyzer for TrueSight Operations Management", "Term", "4/1/2026", "3/31/2027", 365, 3,
+         2874.8, 1466.15],
+        ["CM00000001", dt.datetime(2026, 6, 10), "Acme Widgets B.V. & Co. KG", "Germany", "Partner Reseller GmbH",
+         "Sentry Hardware Analyzer for TrueSight Operations Management", "Term", "4/1/2026", "3/31/2027", 365, -1,
+         -958.27, -488.72],
+        [None] * 9 + ["Term Total:", 2, 1916.53, 977.43],
+        ["204311018", dt.datetime(2025, 12, 24), "Credit Agricole Freedonia", "Freedonia", "Credit Agricole Freedonia",
+         "Sentry for TrueSight Operations Management", "License", "11/8/2024", "11/8/2024", 1, 1, 129.67, 51.87],
+        [None] * 8 + ["Resource Bundle License:", None, 1, 129.67, 51.87],  # a subtotal without the word "Total"
+    ])
+    rep = mzd_report.parse(data, "Detail.xlsx")
+    assert rep.source == "xlsx" and rep.reliable and rep.checked_totals == 2
+    first, credit, lic = rep.lines
+    assert first.customer == "Acme Widgets B.V. & Co. KG" and first.billing_company == "Partner Reseller GmbH"
+    assert first.start == dt.date(2026, 4, 1) and first.end == dt.date(2027, 3, 31) and first.quantity == 3
+    assert credit.quantity == -1 and credit.net == Decimal("-958.27")
+    assert lic.license_type == "perpetual" and lic.customer == "Credit Agricole Freedonia"  # "Credit" is a real name
+
+
+def test_totals_that_do_not_add_up_make_the_report_unreliable():
+    data = _xlsx([NEW_HEADER,
+                  ["INV1", dt.datetime(2026, 5, 25), "Acme", "Freedonia", "Acme", "Sentry X", "Term", "4/1/2026",
+                   "3/31/2027", 365, 3, 100, 50],
+                  [None] * 9 + ["Term Total:", 5, 100, 50]])
+    rep = mzd_report.parse(data, "Detail.xlsx")
+    assert not rep.reliable and "Term Total" in rep.warnings[0]
+
+
+def test_old_layout_headers_are_recognised():
+    old = ["Revenue Type", "Product Name", "Invoice #", "Invoice Date", "Invoice Type", "Install Company",
+           "Install Country", "Billing Company", "Ref Inv #", "Number of copies", "US Converted Net Amount", "Fee",
+           "Maintenance Begin Date", "Maintenance End Date", "Maintenance Term(Days)"]
+    assert [mzd_report.field_for(h) for h in old] == [
+        "charge", "product", "doc", "doc_date", "doc_type", "customer", "country", "billing", "overflow", "qty", "net",
+        "fee", "start", "end", "days"]
+    assert mzd_report.field_for("Oracle Ar Inv Cm Number") == "doc"
+
+
+def test_pdf_totals_with_spaced_digits():
+    assert mzd_report.total_numbers("Term Total: 5,483 1 52,568.79 8 3,912.83") == (Decimal(5483), Decimal("152568.79"))
+    assert mzd_report.total_numbers("Converged Term total: 6 691.46 152.12") == (Decimal(6), Decimal("691.46"))
+    assert mzd_report.total_numbers("Bundle prior to April 2026Total: (2,770) (2,661.25) (1,304.01)") == (
+        Decimal(-2770), Decimal("-2661.25"))
+    assert mzd_report.total_numbers("Total Payment Due $ 364,025.79") is None
+
+
+def test_cells_that_ran_together_are_split_by_content():
+    def ws(text):
+        return [{"text": t, "x0": i * 30.0, "x1": i * 30.0 + 25} for i, t in enumerate(text.split())]
+    s = mzd_report._split_cell
+    assert s(ws("PERPETUAL Rev Sentry Monitoring Studio"), ["charge", "product"]) == {
+        "charge": "PERPETUAL Rev", "product": "Sentry Monitoring Studio"}
+    assert s(ws("23871693/20/2020"), ["doc", "doc_date"]) == {"doc_date": "3/20/2020", "doc": "2387169"}
+    assert s(ws("InvoiceAcme Widgets Ltd"), ["doc_type", "customer"]) == {"doc_type": "Invoice",
+                                                                         "customer": "Acme Widgets Ltd"}
+    assert s(ws("1,559.76 8/6/2024 8/5/2027"), ["fee", "start", "end"]) == {
+        "fee": "1,559.76", "start": "8/6/2024", "end": "8/5/2027"}
+
+
+def test_glued_columns_are_rejected_not_imported():
+    base = {"doc": "INV1", "product": "Sentry X", "charge": "Term", "qty": 1, "net": 1, "end": "1/1/2027",
+            "billing": "Acme"}
+    for bad in ("RENEWAL SUPPORTACME INTERNATIONAL", "Invoice Acme Ltd", "ADD Acme Ltd"):
+        try:
+            mzd_report.make_line({**base, "customer": bad}, 1)
+        except mzd_report.ReportError as exc:
+            assert "another column" in str(exc)
+        else:
+            raise AssertionError(bad)
     try:
-        mzd_report.parse(b"not a pdf")
+        mzd_report.make_line({**base, "customer": "Acme Disclosure Statement " + "x" * 300}, 1)
     except mzd_report.ReportError as exc:
-        assert "PDF" in str(exc)
-    else:
-        raise AssertionError("expected ReportError")
+        assert "not read correctly" in str(exc)
+
+
+def test_rejects_other_files():
+    for data, name in ((b"not a report", "x.txt"), (b"%PDF-1.4 nothing", "x.pdf")):
+        try:
+            mzd_report.parse(data, name)
+        except mzd_report.ReportError:
+            pass
+        else:
+            raise AssertionError(name)
 
 
 def _line(doc, customer, product, qty, start, end, billing=None, kind="term", net="100.00"):
@@ -155,10 +234,10 @@ def test_upload_endpoint_rejects_non_reports(client):
     assert r.status_code == 422
 
 
-def _ent(qty, start, end, source="bmc_mzd"):
+def _ent(qty, start, end, source="bmc_mzd", kind="saas"):
     from types import SimpleNamespace
     return SimpleNamespace(id=1, account_id=1, account=SimpleNamespace(name="X"), product_name="P",
-                           license_type="saas", quantity=Decimal(qty), start_date=start, end_date=end, source=source,
+                           license_type=kind, quantity=Decimal(qty), start_date=start, end_date=end, source=source,
                            reseller=None, lapse_resolved_at=None, lapse_resolution=None, lapse_resolved_by=None)
 
 
@@ -175,3 +254,34 @@ def test_quarterly_instalments_wait_for_the_next_report():
     # a licence added by hand lapses on its end date
     manual = [_ent("5", d(2025, 9, 1), d(2026, 8, 31), source="manual")]
     assert ent._holding(manual, d(2026, 10, 15), 60, report_cutoff=None).status == "lapsed"
+
+
+def test_perpetual_licences_never_lapse_or_renew():
+    d = dt.date
+    lic = [_ent("200", d(2020, 3, 20), None, kind="perpetual"), _ent("50", d(2024, 2, 1), None, kind="perpetual")]
+    h = ent._holding(lic, d(2026, 10, 15), 60, report_cutoff=d(2026, 6, 30))
+    assert h.status == "perpetual" and h.quantity == 250 and h.renewal_date is None and h.days_to_renewal is None
+
+
+def test_manual_perpetual_licence_needs_no_end_date(client):
+    acc = client.post("/api/accounts", json={"name": "Perpetua Direct"}).json()
+    r = client.post(f"/api/accounts/{acc['id']}/licences", json={"product_name": "Sentry Storage Analyzer",
+                                                                  "quantity": 40, "license_type": "perpetual"})
+    assert r.status_code == 201
+    assert client.post(f"/api/accounts/{acc['id']}/licences", json={
+        "product_name": "X", "quantity": 1, "license_type": "term"}).status_code == 422
+    h = client.get(f"/api/accounts/{acc['id']}/licences").json()["holdings"][0]
+    assert h["status"] == "perpetual" and h["renewal_date"] is None
+
+
+def test_unreliable_report_cannot_be_imported(client):
+    data = _xlsx([NEW_HEADER,
+                  ["INV9", dt.datetime(2026, 5, 25), "Wrongsum Ltd", "Freedonia", "Wrongsum Ltd", "Sentry X", "Term",
+                   "4/1/2026", "3/31/2027", 365, 3, 100, 50],
+                  [None] * 9 + ["Term Total:", 5, 100, 50]])
+    files = {"file": ("Detail.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    dry = client.post("/api/licences/import/bmc-mzd", files=files, data={"commit": "false"})
+    assert dry.status_code == 200 and dry.json()["reliable"] is False and dry.json()["warnings"]
+    r = client.post("/api/licences/import/bmc-mzd", files=files, data={"commit": "true"})
+    assert r.status_code == 422 and "Not imported" in r.json()["detail"]
+    assert client.get("/api/accounts", params={"q": "Wrongsum"}).json()["total"] == 0
