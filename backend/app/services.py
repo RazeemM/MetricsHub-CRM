@@ -152,8 +152,6 @@ def validate_stage(db: Session, opp: Opportunity, stage_id: int) -> Stage:
 def change_stage(db: Session, opp: Opportunity, stage: Stage, user: User | None, lost_reason: str | None = None):
     if opp.stage_id == stage.id:
         return
-    if stage.kind == "lost" and not (lost_reason or opp.lost_reason):
-        raise HTTPException(422, "A lost reason is required to close an opportunity as lost")
     db.add(StageHistory(opportunity_id=opp.id, from_stage_id=opp.stage_id, to_stage_id=stage.id,
                         changed_by_id=user.id if user else None))
     opp.stage_id = stage.id

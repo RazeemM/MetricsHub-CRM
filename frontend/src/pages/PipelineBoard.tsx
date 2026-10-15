@@ -1,5 +1,5 @@
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd'
-import { Badge, Button, Card, Group, Modal, SegmentedControl, Select, Stack, Text, Textarea } from '@mantine/core'
+import { Badge, Button, Card, Group, SegmentedControl, Select, Stack, Text } from '@mantine/core'
 import { IconPlus } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -42,34 +42,20 @@ export default function PipelineBoard() {
   const [brandId, setBrandId] = useState<string | null>(null)
   const [ownerId, setOwnerId] = useState<string | null>(null)
   const [platformId, setPlatformId] = useState<string | null>(null)
-  const [pendingLost, setPendingLost] = useState<{ oppId: number; stageId: number } | null>(null)
-  const [reason, setReason] = useState('')
   const pid = pipelineId ?? (pipelines?.[0] ? String(pipelines[0].id) : null)
   const params = { pipeline_id: pid ?? undefined, brand_id: brandId ?? undefined, owner_id: ownerId ?? undefined, referring_platform_id: platformId ?? undefined }
   const key = ['board', params]
   const { data } = useQuery({ queryKey: key, queryFn: () => api<Board>('/opportunities/board', { params }), enabled: !!pid })
 
   const move = useApiMutation(
-    (v: { oppId: number; stageId: number; lost_reason?: string }) =>
-      api(`/opportunities/${v.oppId}/stage`, { method: 'POST', body: { stage_id: v.stageId, lost_reason: v.lost_reason } }),
-    {
-      invalidate: [['board'], ['dashboard'], ['opportunities'], ['opportunity']],
-      onSuccess: () => {
-        setPendingLost(null)
-        setReason('')
-      },
-    },
+    (v: { oppId: number; stageId: number }) => api(`/opportunities/${v.oppId}/stage`, { method: 'POST', body: { stage_id: v.stageId } }),
+    { invalidate: [['board'], ['dashboard'], ['opportunities'], ['opportunity']] },
   )
 
   const onDragEnd = (r: DropResult) => {
     if (!r.destination || !data || r.destination.droppableId === r.source.droppableId) return
     const stageId = Number(r.destination.droppableId)
     const oppId = Number(r.draggableId)
-    const col = data.columns.find((c) => c.stage.id === stageId)
-    if (col?.stage.kind === 'lost') {
-      setPendingLost({ oppId, stageId })
-      return
-    }
     // optimistic move
     qc.setQueryData<Board>(key, (b) => {
       if (!b) return b
@@ -183,20 +169,6 @@ export default function PipelineBoard() {
           })}
         </div>
       </DragDropContext>
-      <Modal opened={!!pendingLost} onClose={() => setPendingLost(null)} title="Why was this deal lost?">
-        <Stack>
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Price, competitor, no budget, timing…" data-autofocus />
-          <Group justify="flex-end">
-            <Button
-              disabled={!reason.trim()}
-              loading={move.isPending}
-              onClick={() => pendingLost && move.mutate({ ...pendingLost, lost_reason: reason })}
-            >
-              Mark lost
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   )
 }

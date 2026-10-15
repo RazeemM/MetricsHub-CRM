@@ -233,9 +233,9 @@ export default function OpportunityDetail() {
       </Grid>
       <Modal opened={lostOpen} onClose={() => setLostOpen(false)} title="Mark as lost">
         <Stack>
-          <Textarea label="Lost reason" required value={lostReason} onChange={(e) => setLostReason(e.target.value)} placeholder="Price, competitor, no budget, timing…" />
+          <Textarea label="Lost reason (optional)" value={lostReason} onChange={(e) => setLostReason(e.target.value)} placeholder="Price, competitor, no budget, timing…" />
           <Group justify="flex-end">
-            <Button color="gray" disabled={!lostReason.trim()} loading={move.isPending} onClick={() => lost && move.mutate({ stage_id: lost.id, lost_reason: lostReason })}>
+            <Button color="gray" loading={move.isPending} onClick={() => lost && move.mutate({ stage_id: lost.id, lost_reason: lostReason.trim() || undefined })}>
               Mark lost
             </Button>
           </Group>

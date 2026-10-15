@@ -76,7 +76,7 @@ def test_opportunity_pricing_and_stages(client, ref):
 
     stages = {s["name"]: s["id"] for s in ref["pipelines"]["new_business"]["stages"]}
     r = client.post(f"/api/opportunities/{o['id']}/stage", json={"stage_id": stages["Lost"]})
-    assert r.status_code == 422  # lost reason required
+    assert r.status_code == 200 and r.json()["lost_reason"] is None  # a lost reason is optional
     r = client.post(f"/api/opportunities/{o['id']}/stage", json={"stage_id": stages["Won"]})
     assert r.json()["closed_at"] and r.json()["effective_probability"] == 100
     assert client.get(f"/api/accounts/{acc['id']}").json()["account_type"] == "customer"

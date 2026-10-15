@@ -156,8 +156,6 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db), u
     db.add(opp)
     db.flush()
     set_line_items(db, opp, data.line_items)
-    if stage.kind == "lost" and not opp.lost_reason:
-        raise HTTPException(422, "A lost reason is required to close an opportunity as lost")
     if stage.kind != "open":
         opp.closed_at = dt.datetime.now(dt.UTC)
         if stage.kind == "won":
