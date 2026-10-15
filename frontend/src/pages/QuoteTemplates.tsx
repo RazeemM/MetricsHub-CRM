@@ -55,6 +55,8 @@ export interface QuoteTemplate {
   footer_text: string | null
   show_discount: boolean
   show_signature: boolean
+  email_subject: string | null
+  email_body: string | null
 }
 
 async function postForBlob(path: string, body: unknown): Promise<Blob> {
@@ -244,6 +246,8 @@ export default function QuoteTemplates() {
                   <Switch label="Discount column (when a line has a discount)" checked={draft.show_discount} onChange={(e) => set('show_discount')(e.currentTarget.checked)} disabled={ro} />
                   <Switch label="Signature block" checked={draft.show_signature} onChange={(e) => set('show_signature')(e.currentTarget.checked)} disabled={ro} />
                 </Group>
+                <TextInput label="Email subject" description="Used when a quote is emailed from the CRM" value={draft.email_subject ?? ''} onChange={(e) => set('email_subject')(e.target.value)} disabled={ro} />
+                <Textarea label="Email message" autosize minRows={5} value={draft.email_body ?? ''} onChange={(e) => set('email_body')(e.target.value)} disabled={ro} />
                 <Card withBorder bg="var(--mantine-color-default-hover)" p="xs">
                   <Text size="xs" fw={600} mb={4}>
                     Placeholders and formatting

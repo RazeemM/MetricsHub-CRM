@@ -332,6 +332,8 @@ class QuoteTemplate(TimestampMixin, Base):
     footer_text: Mapped[str | None] = mapped_column(Text)
     show_discount: Mapped[bool] = mapped_column(Boolean, default=True)
     show_signature: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_subject: Mapped[str | None] = mapped_column(String(255))
+    email_body: Mapped[str | None] = mapped_column(Text)
     brand: Mapped[Brand] = relationship()
 
 

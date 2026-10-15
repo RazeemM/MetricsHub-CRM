@@ -60,6 +60,10 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
   - Each quote freezes the lines, prices, customer and template as they are when it is generated, so later edits never change a quote that was already sent.
   - Status: draft, sent, accepted, rejected or expired. Only drafts can be deleted.
   - PDFs are rendered by WeasyPrint. Only embedded `data:` images may load, so rendering makes no network or file access.
+- **Emailing a quote:** the envelope button on a quote opens a pre-filled message (primary contact, subject and wording from the brand's template, PDF attached).
+  - It is sent through Microsoft 365 from the signed-in user's own mailbox, so it appears in their Outlook *Sent Items* and replies come back to them. See [Emailing quotes through Microsoft 365](#emailing-quotes-through-microsoft-365).
+  - A draft quote is marked *sent*, the email is logged on the opportunity's activity timeline, and the send is recorded in the audit log.
+  - The email subject and message are edited per brand under *Quote templates*, with the same placeholders.
 - **Placeholder prices:** every catalog product now has an editable price in Products & pricing → Price books.
   - Recurring products are priced per unit per month.
   - MetricsHub Enterprise at $15/host/month and the two Sentry bundles use real list prices; everything else is a placeholder.
@@ -113,7 +117,7 @@ Notes, tasks and emails stay in Freshsales for now.
 
 ## Coming in the next phases
 
-2. Emailing quotes from the CRM, automatic renewal opportunities 120 days before contract end, and richer reports.
+2. Automatic renewal opportunities 120 days before contract end, and richer reports.
 3. Email: direct emails from Microsoft 365 logged on the timeline, a template editor with merge fields and HTML/.eml import, and campaigns with tracking and unsubscribe handling.
 4. Inbound webhooks for the website Contact, Quote, Trial, Download and Partner forms, which create or update contacts automatically.
 
@@ -179,6 +183,27 @@ docker compose exec -T db pg_restore -U crm -d crm --clean < backups/crm-YYYYMMD
    - For two separate tenants (one for Sentry Software, one for MetricsHub), register the app as multitenant and use `https://login.microsoftonline.com/organizations/v2.0` as the issuer. The CRM then checks each token against the signing user's own tenant. Keep `CRM_OIDC_AUTO_PROVISION_DOMAINS` set, so only your two domains can create accounts.
 
 The flow is the authorization code flow with PKCE. The ID token is verified against the provider's published signing keys (audience, issuer and nonce). The CRM then issues its own session token, which is passed back in the URL fragment so it never appears in server logs.
+
+## Emailing quotes through Microsoft 365
+
+The CRM sends with Microsoft Graph, using the same app registration as single sign-on.
+
+1. In the app registration, go to **API permissions → Add a permission → Microsoft Graph → Application permissions** and add **Mail.Send**. Click **Grant admin consent**.
+2. Limit the mailboxes the app may send from. Without this, Mail.Send allows sending as *any* mailbox in the tenant. In Exchange Online PowerShell:
+   ```powershell
+   New-DistributionGroup -Name "CRM senders" -Type Security -Members razeem@metricshub.com   # add every CRM user
+   New-ApplicationAccessPolicy -AppId <Application (client) ID> -PolicyScopeGroupId "CRM senders" -AccessRight RestrictAccess -Description "MetricsHub CRM"
+   ```
+3. Put these values in `.env` and restart the API:
+   ```
+   CRM_MAIL_BACKEND=graph
+   # Single tenant: leave empty (taken from CRM_OIDC_ISSUER).
+   # Two tenants (multitenant SSO): one tenant per email domain. The app needs admin consent in both tenants.
+   CRM_GRAPH_TENANT_ID=metricshub.com=<MetricsHub tenant ID>,sentrysoftware.com=<Sentry tenant ID>
+   ```
+   - `CRM_GRAPH_CLIENT_ID` / `CRM_GRAPH_CLIENT_SECRET` are only needed for a separate app registration.
+   - `CRM_MAIL_FROM=sales@metricshub.com` sends everything from one shared mailbox instead; replies then go to the user who sent it.
+   - `CRM_MAIL_BACKEND=log` keeps messages on the server without sending them (staging and demos).
 
 ## Project layout
 

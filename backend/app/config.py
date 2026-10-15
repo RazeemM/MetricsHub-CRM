@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     def sso_enabled(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id)
 
+    # Outgoing email (quotes): "disabled", "graph" (Microsoft 365) or "log" (kept in memory, nothing sent)
+    mail_backend: str = "disabled"
+    # Microsoft Graph app registration; empty = reuse the SSO app (tenant taken from oidc_issuer)
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
+    # Send every email from this mailbox (e.g. sales@metricshub.com) instead of the signed-in user's own
+    mail_from: str = ""
+
     # Days before contract end when a renewal opportunity is opened
     renewal_lead_days: int = 120
 

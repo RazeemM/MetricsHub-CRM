@@ -19,7 +19,7 @@ env = Environment(loader=FileSystemLoader(BASE / "templates"), autoescape=select
 TEMPLATE_FIELDS = [
     "company_name", "address", "vat_number", "registration", "email", "phone", "website", "logo_data_uri",
     "logo_height", "header_show_name", "header_bg", "header_text_color", "accent_color", "title", "intro_text", "terms_text",
-    "payment_terms", "validity_days", "footer_text", "show_discount", "show_signature",
+    "payment_terms", "validity_days", "footer_text", "show_discount", "show_signature", "email_subject", "email_body",
 ]
 
 # Placeholders users can put in intro, terms, payment terms and footer
@@ -41,6 +41,18 @@ _SAMPLE_TERMS = """1. Prices are exclusive of VAT and any applicable taxes.
 5. All orders are subject to the {company} General Terms and Conditions.
 
 PLACEHOLDER TEXT: have your legal team review and replace these terms."""
+
+
+DEFAULT_EMAIL_SUBJECT = "{company} quotation {quote_number} for {customer}"
+DEFAULT_EMAIL_BODY = """Dear {contact},
+
+Please find attached our quotation {quote_number} for {customer}, valid until {valid_until}.
+
+Do not hesitate to reply to this email with any question.
+
+Best regards,
+{owner}
+{company}"""
 
 
 def _logo(filename: str) -> str | None:
@@ -75,6 +87,8 @@ def default_template(brand: Brand) -> dict:
         "footer_text": "{company} · Thank you for your business",
         "show_discount": True,
         "show_signature": True,
+        "email_subject": DEFAULT_EMAIL_SUBJECT,
+        "email_body": DEFAULT_EMAIL_BODY,
     }
 
 
@@ -205,8 +219,8 @@ def _inline(s: str) -> str:
     return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", str(escape(s)))
 
 
-def render_html(quote_data: dict, template: dict) -> str:
-    values = {
+def placeholder_values(quote_data: dict, template: dict) -> dict:
+    return {
         "{customer}": quote_data["customer"].get("name"),
         "{contact}": quote_data["customer"].get("contact_name") or quote_data["customer"].get("name"),
         "{quote_number}": quote_data["display_number"],
@@ -216,6 +230,10 @@ def render_html(quote_data: dict, template: dict) -> str:
         "{owner}": quote_data.get("owner") or "",
         "{company}": template.get("company_name") or "",
     }
+
+
+def render_html(quote_data: dict, template: dict) -> str:
+    values = placeholder_values(quote_data, template)
     t = dict(template)
     for key in ("intro_text", "terms_text", "footer_text"):
         t[key] = rich(fill(t.get(key), values)) if t.get(key) else ""

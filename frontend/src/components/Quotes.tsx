@@ -1,6 +1,6 @@
 import { ActionIcon, Badge, Button, Group, Modal, NumberInput, Select, Stack, Table, Text, Textarea, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconDownload, IconEye, IconFileInvoice, IconTrash } from '@tabler/icons-react'
+import { IconDownload, IconEye, IconFileInvoice, IconMail, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -8,6 +8,7 @@ import { api, getToken } from '../api'
 import { useAuth } from '../auth'
 import { useApiMutation } from '../hooks'
 import { fmtDate, money } from '../labels'
+import { EmailQuote } from './EmailQuote'
 
 interface QuoteRow {
   id: number
@@ -52,6 +53,7 @@ export function Quotes({ opportunityId, hasLines, isAdmin }: { opportunityId: nu
   const [open, setOpen] = useState(false)
   const [validDays, setValidDays] = useState<number | ''>('')
   const [notes, setNotes] = useState('')
+  const [emailing, setEmailing] = useState<number | null>(null)
 
   const create = useApiMutation(
     () => api<QuoteRow>(`/opportunities/${opportunityId}/quotes`, { method: 'POST', body: { valid_days: validDays || null, notes: notes || null } }),
@@ -128,6 +130,13 @@ export function Quotes({ opportunityId, hasLines, isAdmin }: { opportunityId: nu
                         <ActionIcon variant="subtle" onClick={() => openPdf(q.id, true, q.display_number)} aria-label="Download PDF">
                           <IconDownload size={16} />
                         </ActionIcon>
+                        {canWrite && !['rejected', 'expired'].includes(q.status) && (
+                          <Tooltip label="Email to customer">
+                            <ActionIcon variant="subtle" onClick={() => setEmailing(q.id)} aria-label="Email quote">
+                              <IconMail size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         {canWrite && q.status === 'draft' && (
                           <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(q.id)} aria-label="Delete draft">
                             <IconTrash size={16} />
@@ -167,6 +176,7 @@ export function Quotes({ opportunityId, hasLines, isAdmin }: { opportunityId: nu
           </Group>
         </Stack>
       </Modal>
+      <EmailQuote quoteId={emailing} opportunityId={opportunityId} onClose={() => setEmailing(null)} />
     </Stack>
   )
 }
