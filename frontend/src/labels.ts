@@ -30,6 +30,7 @@ export const LEAD_SOURCES: Record<string, string> = {
   download: 'Download',
   trial: 'Trial',
   partner_signup: 'Partner sign-up',
+  newsletter: 'Newsletter sign-up',
   direct: 'Direct',
   event: 'Event',
   marketplace: 'Marketplace',

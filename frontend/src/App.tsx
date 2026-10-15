@@ -20,6 +20,7 @@ import PipelineBoard from './pages/PipelineBoard'
 import Products from './pages/Products'
 import QuoteTemplates from './pages/QuoteTemplates'
 import Users from './pages/Users'
+import WebForms, { WebFormDetail } from './pages/WebForms'
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -66,6 +67,8 @@ export default function App() {
         <Route path="/email/lists/:id" element={<MailingListDetail />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/web-forms" element={<WebForms />} />
+        <Route path="/web-forms/:id" element={<WebFormDetail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

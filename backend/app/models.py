@@ -429,7 +429,8 @@ class ListMember(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     list_id: Mapped[int] = mapped_column(ForeignKey("mailing_lists.id", ondelete="CASCADE"), index=True)
     contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), index=True)
-    status: Mapped[str] = mapped_column(String(16), default="subscribed")  # subscribed, unsubscribed
+    status: Mapped[str] = mapped_column(String(16), default="subscribed")  # subscribed, unsubscribed, pending
+    # pending = signed up on a web form, waiting for the double opt-in confirmation
     source: Mapped[str | None] = mapped_column(String(40))  # manual, filter, import, web form...
     added_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     unsubscribed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
@@ -496,6 +497,50 @@ class CampaignRecipient(Base):
     click_count: Mapped[int] = mapped_column(Integer, default=0)
     unsubscribed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     contact: Mapped[Contact | None] = relationship()
+
+
+class WebForm(TimestampMixin, Base):
+    """A website form (Contact, Quote request, Trial, Newsletter...) that posts submissions to the CRM."""
+
+    __tablename__ = "web_forms"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)  # in the URL: /api/public/forms/{key}
+    name: Mapped[str] = mapped_column(String(160))
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="SET NULL"))
+    lead_source: Mapped[str] = mapped_column(String(40), default="website_contact")
+    field_map: Mapped[dict] = mapped_column(JSONB, default=dict)  # website field -> contact field
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    list_id: Mapped[int | None] = mapped_column(ForeignKey("mailing_lists.id", ondelete="SET NULL"))
+    auth_mode: Mapped[str] = mapped_column(String(10), default="hmac")  # hmac (server to server), token (browser)
+    secret: Mapped[str] = mapped_column(String(80))
+    allowed_origins: Mapped[list] = mapped_column(JSONB, default=list)  # e.g. ["https://www.metricshub.com"]
+    honeypot_field: Mapped[str | None] = mapped_column(String(64), default="website")
+    redirect_url: Mapped[str | None] = mapped_column(String(500))  # thank-you page after a plain HTML post
+    confirm_redirect_url: Mapped[str | None] = mapped_column(String(500))  # after the double opt-in confirmation
+    confirm_subject: Mapped[str | None] = mapped_column(String(255))
+    confirm_body_html: Mapped[str | None] = mapped_column(Text)
+    notify_owner: Mapped[bool] = mapped_column(Boolean, default=True)
+    rate_limit_per_hour: Mapped[int] = mapped_column(Integer, default=20)  # accepted submissions per IP address
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    brand: Mapped[Brand | None] = relationship()
+    owner: Mapped[User | None] = relationship()
+    mailing_list: Mapped[MailingList | None] = relationship()
+
+
+class FormSubmission(Base):
+    __tablename__ = "web_form_submissions"
+    __table_args__ = (Index("ix_web_form_submissions_rate", "form_id", "ip", "created_at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    form_id: Mapped[int] = mapped_column(ForeignKey("web_forms.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    status: Mapped[str] = mapped_column(String(16))  # accepted, pending (opt-in), confirmed, spam, error
+    email: Mapped[str | None] = mapped_column(String(255))
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"))
+    contact_created: Mapped[bool] = mapped_column(Boolean, default=False)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    ip: Mapped[str | None] = mapped_column(String(45))
+    user_agent: Mapped[str | None] = mapped_column(String(255))
+    note: Mapped[str | None] = mapped_column(String(500))  # why spam / error, or that the confirmation was sent
 
 
 Index("uq_accounts_external", Account.external_source, Account.external_id, unique=True)

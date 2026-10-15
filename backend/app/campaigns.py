@@ -136,7 +136,8 @@ def audience(db: Session, c: Campaign) -> tuple[list[tuple[Contact, str]], list[
     for m in sorted(members, key=lambda m: m.contact_id):
         ct = m.contact
         if m.status != "subscribed":
-            skipped.setdefault(ct.id, (ct, ct.email or "", "unsubscribed from the list"))
+            skipped.setdefault(ct.id, (ct, ct.email or "", "subscription not confirmed yet" if m.status == "pending"
+                                       else "unsubscribed from the list"))
             continue
         email = (ct.email or "").strip().lower()
         if not email or "@" not in email:

@@ -1,14 +1,15 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from .config import get_settings
 from .db import SessionLocal
 from .routers import (
     accounts, activities, contacts, core, dashboard, email, entitlements, imports, opportunities, products, public,
-    quotes, sso,
+    quotes, sso, webforms,
 )
 from .jobs import scheduler
 from .seed import seed
@@ -38,8 +39,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
+@app.middleware("http")
+async def public_forms_cors(request: Request, call_next):
+    """Websites post their forms from their own domains: the form endpoints answer any origin (without cookies).
+    Which websites may post is checked per form (allowed origins and secret)."""
+    if not request.url.path.startswith("/api/public/forms/"):
+        return await call_next(request)
+    response = Response(status_code=204) if request.method == "OPTIONS" else await call_next(request)
+    if origin := request.headers.get("origin"):
+        response.headers.update({
+            "Access-Control-Allow-Origin": origin, "Vary": "Origin", "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, X-CRM-Form-Token, X-CRM-Signature, X-CRM-Timestamp, "
+                                            "X-Requested-With",
+            "Access-Control-Max-Age": "600"})
+        if "access-control-allow-credentials" in response.headers:
+            del response.headers["access-control-allow-credentials"]
+    return response
+
+
 for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements,
-          email, public):
+          email, public, webforms):
     app.include_router(r.router)
 
 

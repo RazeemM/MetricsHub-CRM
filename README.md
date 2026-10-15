@@ -114,6 +114,109 @@ The reports are BMC-confidential: keep them out of this repository and out of sh
   - The link opens a confirmation page, because mail scanners follow links. Confirming unsubscribes the contact from all marketing email and every list, and is noted on their timeline.
 - **Tracking links** are signed, so they cannot be used to redirect people to other sites. Tracking can be turned off per campaign.
 
+## Website forms (phase 4)
+
+The websites' Contact, Quote request, Trial, Download, Partner and Newsletter forms post straight into the CRM. Admins set them up under **Website forms** in the menu. Each form has:
+
+- a **key**, which gives its address: `https://crm.metricshub.com/api/public/forms/<key>`
+- a **secret**, sent with every submission (see *Security* below). **Rotate** it from the form's page; the old one stops working at once.
+- a **lead source** (Website contact form, Quote request, Trial, Download, Partner sign-up, Newsletter sign-up), a **brand**, and an **owner** for new contacts
+- a **field mapping**: website field → contact field. Fields named `email`, `first_name`, `last_name`, `name`, `company`, `phone`, `job_title`, `country`, `message` work without a mapping.
+- an optional **mailing list**, a **thank-you page** for plain HTML posts, and whether to **notify the owner**
+
+**What a submission does**
+
+1. Finds the contact by email, or creates it as a lead with the form's lead source, brand and owner. An existing contact keeps its values: only empty fields are filled.
+2. Attaches the contact to the account with the same email domain (or exactly the company name typed), if there is one. Free-mail domains are ignored and no account is created; the company name is then kept on the contact.
+3. Adds the person to the form's list:
+   - **Contact list:** at once. Someone who unsubscribed from that list is not added back.
+   - **Newsletter:** double opt-in. The person is added as *pending* and receives a confirmation email through the campaign mail server (`CRM_BULK_MAIL_BACKEND`). Only when they click the link and confirm on the page are they subscribed, with marketing consent recorded on the contact and on their timeline. Pending members never receive campaigns. The link is signed, valid for 7 days, and stops working if they unsubscribe afterwards. The email's subject and HTML can be customised per form (`{first_name}`, `{list_name}`, `{brand}`, `{confirm_url}`, `{postal_address}`).
+   - If a website field is mapped to **Marketing consent** (a "Send me the newsletter" checkbox), people join the list only when they tick it. On a form without a newsletter list, ticking it records consent directly.
+4. Logs every submitted field on the contact's timeline, and notifies the contact's owner (else the administrators) in the bell.
+
+Every submission is listed on the form's **Submissions** tab with its status: accepted, pending opt-in, confirmed, spam or error. The **Test** tab processes a submission as if the website had sent it.
+
+**Security**
+
+- **Signed by the website server (HMAC), recommended.** The website's backend (WordPress, Next.js…) forwards the form fields and signs them, so the secret never reaches visitors: `X-CRM-Timestamp: <unix seconds>` and `X-CRM-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + raw body)>`. Requests more than 5 minutes old are refused.
+- **Posted from the browser (token).** The secret is sent as the `X-CRM-Form-Token` header or a hidden `_token` field. It is visible in the page, so list the **allowed websites** (origins such as `https://www.metricshub.com`): browsers on other sites are refused.
+- **Spam:** a hidden **honeypot** field (default `website`) that people never fill. Submissions with it filled, or with more than 3 links, get the usual answer but create nothing (status *spam*).
+- **Rate limits:** submissions per hour per visitor and per form (default 20), plus 30 requests per 10 minutes per visitor across all forms, which also stops secret guessing. The visitor's address is read from `X-Forwarded-For`: set `CRM_PROXY_HOPS` to the number of proxies in front of the API (1 = the web container's nginx; 2 with Caddy or a load balancer in front).
+- **Answers** are JSON: `{"ok": true, "status": "accepted"}` (or `"pending_confirmation"`), errors `{"ok": false, "detail": "..."}` with 401, 403, 404, 413, 422 or 429. A plain HTML form post is redirected to the thank-you page instead.
+
+The form's **Website code** tab shows these snippets with the form's own address, fields and secret filled in.
+
+**Plain HTML form** (token mode):
+
+```html
+<form action="https://crm.metricshub.com/api/public/forms/contact-us" method="post">
+  <input type="hidden" name="_token" value="FORM_TOKEN">
+  <input type="email" name="email" required placeholder="Email">
+  <input type="text" name="name" placeholder="Name">
+  <input type="text" name="company" placeholder="Company">
+  <textarea name="message" placeholder="Message"></textarea>
+  <label><input type="checkbox" name="newsletter" value="yes"> Send me the newsletter</label>
+  <!-- honeypot: hidden from people, bots fill it -->
+  <input type="text" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+  <button type="submit">Send</button>
+</form>
+```
+
+**JavaScript, staying on the page** (token mode; give the form `id="crm-form"`):
+
+```html
+<script>
+document.querySelector('#crm-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const fields = Object.fromEntries(new FormData(e.target))
+  fields._page = location.href
+  const res = await fetch('https://crm.metricshub.com/api/public/forms/newsletter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CRM-Form-Token': 'FORM_TOKEN' },
+    body: JSON.stringify(fields),
+  })
+  const r = await res.json()
+  e.target.innerHTML = r.ok
+    ? (r.status === 'pending_confirmation' ? 'Check your inbox to confirm.' : 'Thank you, we will be in touch.')
+    : 'Sorry: ' + r.detail
+})
+</script>
+```
+
+**From the website's server** (HMAC mode, Node.js):
+
+```js
+import crypto from 'node:crypto'
+
+export async function sendToCrm(fields) {
+  const body = JSON.stringify(fields)
+  const ts = Math.floor(Date.now() / 1000).toString()
+  const sig = crypto.createHmac('sha256', process.env.CRM_FORM_SECRET).update(ts + '.' + body).digest('hex')
+  const res = await fetch('https://crm.metricshub.com/api/public/forms/quote-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CRM-Timestamp': ts, 'X-CRM-Signature': 'sha256=' + sig },
+    body,
+  })
+  return res.json()
+}
+```
+
+**Test with curl:**
+
+```bash
+# token mode
+curl -i https://crm.metricshub.com/api/public/forms/contact-us -H 'Content-Type: application/json' \
+  -H 'X-CRM-Form-Token: FORM_TOKEN' -d '{"email":"jane@example.com","name":"Jane Example","message":"Hello"}'
+
+# HMAC mode
+SECRET='FORM_SECRET'; BODY='{"email":"jane@example.com","name":"Jane Example"}'; TS=$(date +%s)
+SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
+curl -i https://crm.metricshub.com/api/public/forms/quote-request -H 'Content-Type: application/json' \
+  -H "X-CRM-Timestamp: $TS" -H "X-CRM-Signature: sha256=$SIG" -d "$BODY"
+```
+
+The form address and the confirmation link use `CRM_APP_URL`, which must be the CRM's public HTTPS address.
+
 ## Migrating from Freshsales
 
 The migration reads accounts, contacts and deals from Freshsales and is safe to run more than once. Each migrated record stores its Freshsales id, so a second run updates records instead of duplicating them.
@@ -165,7 +268,6 @@ Notes, tasks and emails stay in Freshsales for now.
 
 2. Automatic renewal opportunities 120 days before contract end, and richer reports.
 3. Email: one-to-one emails from a contact's page logged on the timeline, bounce handling, and .eml import of templates.
-4. Inbound webhooks for the website Contact, Quote, Trial, Download and Partner forms, which create or update contacts automatically.
 
 ## Run it locally (development)
 
@@ -290,6 +392,7 @@ backend/
   app/models.py        data model (accounts, contacts, products, price books, pipelines, opportunities…)
   app/pricing.py       deal value calculation
   app/services.py      business rules (contract dates, stage changes, account matching)
+  app/webforms.py      website form submissions: checks, contact upsert, double opt-in
   app/routers/         REST API (auth, sso, accounts, contacts, products, opportunities, activities, imports, dashboard)
   alembic/             database migrations
   tests/               pytest suite (pricing, API, import/export, SSO)

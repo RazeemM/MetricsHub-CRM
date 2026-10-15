@@ -28,6 +28,7 @@ import {
   IconSun,
   IconTargetArrow,
   IconUsers,
+  IconWorldWww,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -114,7 +115,9 @@ export default function Layout() {
   const loc = useLocation()
   const nav = useNavigate()
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
-  const items = isAdmin ? [...NAV, { to: '/users', label: 'Users', icon: IconUsers }] : NAV
+  const items = isAdmin
+    ? [...NAV, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }, { to: '/users', label: 'Users', icon: IconUsers }]
+    : NAV
   const active = (to: string) => (to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to))
 
   return (

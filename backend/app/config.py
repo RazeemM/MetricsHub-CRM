@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     # Physical address shown in every campaign footer (required by anti-spam laws such as CAN-SPAM)
     marketing_postal_address: str = ""
 
+    # Website forms: how many reverse proxies in front of the API add to X-Forwarded-For (the web container's nginx
+    # is one; add one per TLS proxy such as Caddy or a load balancer). Used to find the visitor's IP for rate limiting.
+    proxy_hops: int = 1
+
     # Days before contract end when a renewal opportunity is opened
     renewal_lead_days: int = 120
     # Days before a licence's renewal date when its owner is notified (about 2 months)

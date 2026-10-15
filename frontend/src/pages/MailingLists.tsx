@@ -41,6 +41,7 @@ export interface MailingList {
   brand_id: number | null
   subscribed: number
   unsubscribed: number
+  pending: number
   created_at: string
 }
 
@@ -50,7 +51,7 @@ interface Member {
   name: string
   email: string | null
   company: string | null
-  status: 'subscribed' | 'unsubscribed'
+  status: 'subscribed' | 'unsubscribed' | 'pending'
   source: string | null
   added_at: string
   consent: boolean
@@ -278,7 +279,7 @@ export function MailingListDetail() {
     <>
       <PageHeader
         title={list.name}
-        subtitle={`${list.kind === 'newsletter' ? 'Newsletter' : 'Contact list'} · ${list.subscribed} subscribed · ${list.unsubscribed} unsubscribed`}
+        subtitle={`${list.kind === 'newsletter' ? 'Newsletter' : 'Contact list'} · ${list.subscribed} subscribed · ${list.unsubscribed} unsubscribed${list.pending ? ` · ${list.pending} waiting for confirmation` : ''}`}
         actions={
           canWrite && (
             <>
@@ -325,7 +326,7 @@ export function MailingListDetail() {
       <Card withBorder>
         <Group mb="sm">
           <TextInput placeholder="Search name or email" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} w={280} />
-          <Select placeholder="All statuses" clearable data={[{ value: 'subscribed', label: 'Subscribed' }, { value: 'unsubscribed', label: 'Unsubscribed' }]} value={status} onChange={(v) => { setStatus(v); setPage(1) }} w={180} />
+          <Select placeholder="All statuses" clearable data={[{ value: 'subscribed', label: 'Subscribed' }, { value: 'pending', label: 'Waiting for confirmation' }, { value: 'unsubscribed', label: 'Unsubscribed' }]} value={status} onChange={(v) => { setStatus(v); setPage(1) }} w={180} />
         </Group>
         <Table.ScrollContainer minWidth={720}>
           <Table highlightOnHover>
@@ -351,8 +352,8 @@ export function MailingListDetail() {
                   <Table.Td>{m.company}</Table.Td>
                   <Table.Td>
                     <Group gap={4}>
-                      <Badge size="sm" variant="light" color={m.status === 'subscribed' ? 'green' : 'gray'}>
-                        {m.status}
+                      <Badge size="sm" variant="light" color={m.status === 'subscribed' ? 'green' : m.status === 'pending' ? 'yellow' : 'gray'}>
+                        {m.status === 'pending' ? 'waiting for confirmation' : m.status}
                       </Badge>
                       {m.globally_unsubscribed && (
                         <Badge size="sm" variant="light" color="red">

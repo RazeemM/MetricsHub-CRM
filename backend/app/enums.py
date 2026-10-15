@@ -42,6 +42,7 @@ class LeadSource(StrEnum):
     download = "download"
     trial = "trial"
     partner_signup = "partner_signup"
+    newsletter = "newsletter"
     direct = "direct"
     event = "event"
     marketplace = "marketplace"

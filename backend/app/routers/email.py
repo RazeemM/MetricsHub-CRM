@@ -156,6 +156,7 @@ class ListOut(ListIn):
     id: int
     subscribed: int = 0
     unsubscribed: int = 0
+    pending: int = 0  # signed up on a web form, double opt-in not confirmed yet
     created_at: dt.datetime
 
 
@@ -178,7 +179,7 @@ def _list_out(db: Session, ml: MailingList) -> ListOut:
                              .group_by(ListMember.status)).all())
     return ListOut(id=ml.id, name=ml.name, kind=ml.kind, description=ml.description, brand_id=ml.brand_id,
                    created_at=ml.created_at, subscribed=counts.get("subscribed", 0),
-                   unsubscribed=counts.get("unsubscribed", 0))
+                   unsubscribed=counts.get("unsubscribed", 0), pending=counts.get("pending", 0))
 
 
 @router.get("/lists", response_model=list[ListOut])
