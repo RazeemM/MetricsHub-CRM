@@ -269,6 +269,14 @@ Notes, tasks and emails stay in Freshsales for now.
 2. Automatic renewal opportunities 120 days before contract end, and richer reports.
 3. Email: one-to-one emails from a contact's page logged on the timeline, bounce handling, and .eml import of templates.
 
+## API for integrations and AI agents
+
+- **Interactive reference:** `https://<CRM address>/api/docs`. Click **Authorize** and sign in to try any endpoint. An alternative layout is at `/api/redoc`.
+- **Machine-readable description (OpenAPI 3):** `https://<CRM address>/api/openapi.json`. Point tools and AI agents at it to discover the endpoints.
+- **Authentication:** `POST /api/auth/login` with form fields `username` and `password` returns `access_token`. Send it as `Authorization: Bearer <token>`; tokens last 12 hours. Give integrations their own user with the **readonly** role.
+- **Pages:** lists take `page` and `page_size` (up to 500) and return `items` and `total`.
+- **Bulk exports:** `/api/export/opportunities`, `/api/export/accounts` and `/api/export/contacts`, with `?fmt=csv` or `?fmt=xlsx`.
+
 ## Run it locally (development)
 
 You need Python 3.12 or later, Node 20 or later, and PostgreSQL 16.
@@ -282,7 +290,7 @@ cd backend
 pip install -r requirements-dev.txt
 alembic upgrade head
 python -m app.demo_data        # optional: fictitious sample accounts and deals
-uvicorn app.main:app --reload  # http://localhost:8000/docs for the API reference
+uvicorn app.main:app --reload  # API reference: http://localhost:8000/api/docs
 
 # 3. Web app
 cd ../frontend

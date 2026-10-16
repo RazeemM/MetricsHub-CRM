@@ -30,7 +30,20 @@ async def lifespan(_: FastAPI):
         task.cancel()
 
 
-app = FastAPI(title="MetricsHub & Sentry CRM", version="0.1.0", lifespan=lifespan)
+API_DESCRIPTION = """CRM for MetricsHub and Sentry Software: accounts, contacts, opportunities, quotes, licences
+(BMC MarketZone), campaigns and website forms.
+
+**Authentication:** `POST /api/auth/login` (form fields `username`, `password`) returns `access_token`; send it as
+`Authorization: Bearer <token>`. Tokens last 12 hours. For integrations and AI agents, use a dedicated user with the
+**readonly** role. In this page, click **Authorize** and sign in the same way.
+
+**Lists** are paged with `page` and `page_size` (max 500) and return `items` and `total`. Bulk exports:
+`/api/export/{opportunities,accounts,contacts}?fmt=csv|xlsx`."""
+
+# Docs live under /api so they are reachable through the web container's nginx (which only forwards /api/)
+app = FastAPI(title="MetricsHub & Sentry CRM", version="0.1.0", lifespan=lifespan, description=API_DESCRIPTION,
+              docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json",
+              swagger_ui_parameters={"persistAuthorization": True})
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()],
