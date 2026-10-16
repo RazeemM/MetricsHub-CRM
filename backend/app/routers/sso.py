@@ -6,6 +6,7 @@ Flow: browser -> /api/auth/sso/login -> identity provider -> /api/auth/sso/callb
 import base64
 import datetime as dt
 import hashlib
+import logging
 import secrets
 import time
 from functools import lru_cache
@@ -26,6 +27,7 @@ from ..security import ALGORITHM, create_access_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 STATE_COOKIE = "crm_sso_state"
+log = logging.getLogger("crm.sso")
 
 
 @lru_cache(maxsize=4)
@@ -34,6 +36,39 @@ def _discovery(issuer: str) -> dict:
     r = httpx.get(url, timeout=10)
     r.raise_for_status()
     return r.json()
+
+
+class SsoSetupError(Exception):
+    pass
+
+
+def _metadata(issuer: str) -> dict:
+    """The provider's OpenID configuration, or SsoSetupError with a message an administrator can act on."""
+    try:
+        return _discovery(issuer)
+    except httpx.HTTPStatusError as exc:
+        log.error("SSO discovery %s returned HTTP %s", exc.request.url, exc.response.status_code)
+        raise SsoSetupError(f"The identity provider answered HTTP {exc.response.status_code} for "
+                            f"CRM_OIDC_ISSUER ({issuer}). Check the tenant ID and the /v2.0 ending.") from None
+    except httpx.HTTPError as exc:
+        log.error("SSO discovery for %s failed: %r", issuer, exc)
+        host = httpx.URL(issuer).host if issuer.startswith("http") else issuer
+        raise SsoSetupError(f"The CRM server cannot reach {host} ({type(exc).__name__}). Allow outbound HTTPS from "
+                            "the server to it, or set HTTPS_PROXY for the API container.") from None
+    except ValueError:
+        raise SsoSetupError(f"CRM_OIDC_ISSUER ({issuer}) did not return an OpenID configuration") from None
+
+
+def _provider_error(exc: httpx.HTTPStatusError) -> str:
+    """Microsoft explains a refused code exchange (bad secret, wrong redirect URI...) in error_description."""
+    try:
+        body = exc.response.json()
+        desc = (body.get("error_description") or body.get("error") or "").split("\r\n")[0].split("\n")[0]
+    except ValueError:
+        desc = ""
+    log.error("SSO token exchange refused (HTTP %s): %s", exc.response.status_code, desc)
+    return f"The identity provider refused the sign-in: {desc[:300]}" if desc else \
+        f"The identity provider refused the sign-in (HTTP {exc.response.status_code})"
 
 
 @lru_cache(maxsize=4)
@@ -64,7 +99,10 @@ def sso_login(request: Request):
     s = get_settings()
     if not s.sso_enabled:
         return _fail("SSO is not configured")
-    meta = _discovery(s.oidc_issuer)
+    try:
+        meta = _metadata(s.oidc_issuer)
+    except SsoSetupError as exc:
+        return _fail(str(exc))
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
@@ -94,7 +132,10 @@ def sso_callback(request: Request, code: str | None = None, state: str | None = 
     if not code or not state or not secrets.compare_digest(state, saved["state"]):
         return _fail("Invalid sign-in state")
 
-    meta = _discovery(s.oidc_issuer)
+    try:
+        meta = _metadata(s.oidc_issuer)
+    except SsoSetupError as exc:
+        return _fail(str(exc))
     try:
         token_res = httpx.post(meta["token_endpoint"], timeout=15, data={
             "grant_type": "authorization_code", "code": code, "redirect_uri": _callback_url(request),
@@ -109,7 +150,10 @@ def sso_callback(request: Request, code: str | None = None, state: str | None = 
             expected_issuer = expected_issuer.replace("{tenantid}", tid)
         claims = jwt.decode(id_token, key.key, algorithms=["RS256", "RS384", "RS512", "ES256", "PS256"],
                             audience=s.oidc_client_id, issuer=expected_issuer, leeway=60)
+    except httpx.HTTPStatusError as exc:
+        return _fail(_provider_error(exc))
     except (httpx.HTTPError, KeyError, jwt.PyJWTError) as exc:
+        log.error("SSO sign-in could not be verified: %r", exc)
         return _fail(f"Could not verify sign-in: {type(exc).__name__}")
     if claims.get("nonce") != saved["nonce"]:
         return _fail("Invalid sign-in nonce")

@@ -77,3 +77,42 @@ def test_sso_rejects_bad_state(client, idp):
     client.get("/api/auth/sso/login", follow_redirects=False)
     r = client.get("/api/auth/sso/callback", params={"code": "x", "state": "forged"}, follow_redirects=False)
     assert "sso_error" in r.headers["location"]
+
+
+def _sso_error(r) -> str:
+    from urllib.parse import parse_qs, urlparse
+    assert r.status_code == 302, r.text
+    return parse_qs(urlparse(r.headers["location"]).query)["sso_error"][0]
+
+
+def test_unreachable_or_wrong_issuer_shows_a_message_not_500(client, monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "oidc_issuer", "https://login.microsoftonline.com/tenant-x/v2.0")
+    monkeypatch.setattr(s, "oidc_client_id", "crm-client")
+    sso._discovery.cache_clear()
+
+    def down(url, timeout):
+        raise httpx.ConnectError("Name or service not known", request=httpx.Request("GET", url))
+    monkeypatch.setattr(sso.httpx, "get", down)
+    msg = _sso_error(client.get("/api/auth/sso/login", follow_redirects=False))
+    assert "cannot reach login.microsoftonline.com" in msg and "ConnectError" in msg
+
+    def bad_tenant(url, timeout):
+        return httpx.Response(400, json={"error": "invalid_tenant"}, request=httpx.Request("GET", url))
+    monkeypatch.setattr(sso.httpx, "get", bad_tenant)
+    msg = _sso_error(client.get("/api/auth/sso/login", follow_redirects=False))
+    assert "HTTP 400" in msg and "CRM_OIDC_ISSUER" in msg
+    sso._discovery.cache_clear()
+
+
+def test_refused_code_exchange_shows_the_provider_reason(client, idp, monkeypatch):
+    def refuse(url, data, timeout):
+        return httpx.Response(401, json={"error": "invalid_client", "error_description":
+                                         "AADSTS7000215: Invalid client secret provided.\r\nTrace ID: x"},
+                              request=httpx.Request("POST", url))
+    monkeypatch.setattr(sso.httpx, "post", refuse)
+    r = client.get("/api/auth/sso/login", follow_redirects=False)
+    from urllib.parse import parse_qs, urlparse
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    msg = _sso_error(client.get("/api/auth/sso/callback", params={"code": "c", "state": state}, follow_redirects=False))
+    assert msg == "The identity provider refused the sign-in: AADSTS7000215: Invalid client secret provided."
