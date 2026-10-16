@@ -8,8 +8,8 @@ from fastapi.responses import Response
 from .config import get_settings
 from .db import SessionLocal
 from .routers import (
-    accounts, activities, contacts, core, dashboard, email, entitlements, imports, opportunities, products, public,
-    quotes, sso, webforms,
+    accounts, activities, compose, contacts, core, dashboard, email, entitlements, imports, opportunities, products,
+    public, quotes, sso, webforms,
 )
 from .jobs import scheduler
 from .seed import seed
@@ -60,7 +60,7 @@ async def public_forms_cors(request: Request, call_next):
 
 
 for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements,
-          email, public, webforms):
+          email, compose, public, webforms):
     app.include_router(r.router)
 
 

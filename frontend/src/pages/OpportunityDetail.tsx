@@ -1,12 +1,13 @@
 import { Anchor, Badge, Button, Card, Grid, Group, Modal, SimpleGrid, Stack, Text, Textarea, Title, Tooltip, UnstyledButton } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { IconCheck, IconEdit, IconTrash, IconX } from '@tabler/icons-react'
+import { IconCheck, IconEdit, IconMail, IconTrash, IconX } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { Activities } from '../components/Activities'
+import { ComposeEmail } from '../components/ComposeEmail'
 import { Quotes } from '../components/Quotes'
 import { Field, PageHeader } from '../components/common'
 import { fromLineItem, LineItemsEditor } from '../components/LineItemsEditor'
@@ -62,6 +63,7 @@ export default function OpportunityDetail() {
   const { data: pipelines } = usePipelines()
   const { data: o } = useQuery({ queryKey: ['opportunity', id], queryFn: () => api<Opportunity>(`/opportunities/${id}`) })
   const [lostOpen, setLostOpen] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
   const [lostReason, setLostReason] = useState('')
   const inv = [['opportunity'], ['opportunities'], ['board'], ['dashboard'], ['accounts'], ['account']]
   const move = useApiMutation(
@@ -103,6 +105,9 @@ export default function OpportunityDetail() {
                   Mark lost
                 </Button>
               )}
+              <Button variant="default" leftSection={<IconMail size={16} />} onClick={() => setComposeOpen(true)}>
+                Email
+              </Button>
               <Button component={Link} to={`/opportunities/${id}/edit`} variant="default" leftSection={<IconEdit size={16} />}>
                 Edit
               </Button>
@@ -241,6 +246,7 @@ export default function OpportunityDetail() {
           </Group>
         </Stack>
       </Modal>
+      <ComposeEmail opened={composeOpen} onClose={() => setComposeOpen(false)} opportunityId={id} />
     </>
   )
 }

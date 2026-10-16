@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { Activities } from '../components/Activities'
+import { ComposeEmail } from '../components/ComposeEmail'
 import { Field, LifecycleBadge, PageHeader } from '../components/common'
 import { ContactEmailCard } from '../components/EmailEditor'
 import { ContactFormModal } from '../components/forms'
@@ -19,6 +20,7 @@ export default function ContactDetail() {
   const nav = useNavigate()
   const { canWrite } = useAuth()
   const { data: brands } = useBrands()
+  const [composeOpen, composeModal] = useDisclosure()
   const [editOpen, edit] = useDisclosure()
   const { data: c } = useQuery({ queryKey: ['contact', id], queryFn: () => api<Contact>(`/contacts/${id}`) })
   const remove = useApiMutation(() => api(`/contacts/${id}`, { method: 'DELETE' }), {
@@ -38,8 +40,8 @@ export default function ContactDetail() {
         subtitle={[c.job_title, c.account?.name].filter(Boolean).join(' at ')}
         actions={
           <>
-            {c.email && (
-              <Button variant="default" component="a" href={`mailto:${c.email}`} leftSection={<IconMail size={16} />}>
+            {c.email && canWrite && (
+              <Button variant="default" onClick={composeModal.open} leftSection={<IconMail size={16} />}>
                 Email
               </Button>
             )}
@@ -77,7 +79,16 @@ export default function ContactDetail() {
           <Card withBorder>
             <Stack gap="sm">
               <SimpleGrid cols={2}>
-                <Field label="Email">{c.email && <Anchor href={`mailto:${c.email}`} size="sm">{c.email}</Anchor>}</Field>
+                <Field label="Email">
+                  {c.email &&
+                    (canWrite ? (
+                      <Anchor component="button" type="button" size="sm" onClick={composeModal.open}>
+                        {c.email}
+                      </Anchor>
+                    ) : (
+                      <Text size="sm">{c.email}</Text>
+                    ))}
+                </Field>
                 <Field label="Phone">{c.phone}</Field>
                 <Field label="Mobile">{c.mobile}</Field>
                 <Field label="Account">{c.account && <Anchor component={Link} to={`/accounts/${c.account.id}`} size="sm">{c.account.name}</Anchor>}</Field>
@@ -107,6 +118,7 @@ export default function ContactDetail() {
         </Grid.Col>
       </Grid>
       <ContactFormModal opened={editOpen} onClose={edit.close} contact={c} />
+      <ComposeEmail opened={composeOpen} onClose={composeModal.close} contactId={id} />
     </>
   )
 }
