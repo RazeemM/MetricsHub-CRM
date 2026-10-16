@@ -44,6 +44,9 @@ class SsoSetupError(Exception):
 
 def _metadata(issuer: str) -> dict:
     """The provider's OpenID configuration, or SsoSetupError with a message an administrator can act on."""
+    if not issuer.startswith("https://"):
+        raise SsoSetupError(f"CRM_OIDC_ISSUER must start with https:// (it is '{issuer}'). For Entra ID: "
+                            "https://login.microsoftonline.com/<tenant-id>/v2.0")
     try:
         return _discovery(issuer)
     except httpx.HTTPStatusError as exc:

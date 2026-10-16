@@ -116,3 +116,10 @@ def test_refused_code_exchange_shows_the_provider_reason(client, idp, monkeypatc
     state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
     msg = _sso_error(client.get("/api/auth/sso/callback", params={"code": "c", "state": state}, follow_redirects=False))
     assert msg == "The identity provider refused the sign-in: AADSTS7000215: Invalid client secret provided."
+
+
+def test_issuer_without_https_is_explained(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "oidc_issuer", "//login.microsoftonline.com/tenant-x/v2.0")
+    monkeypatch.setattr(get_settings(), "oidc_client_id", "crm-client")
+    msg = _sso_error(client.get("/api/auth/sso/login", follow_redirects=False))
+    assert msg.startswith("CRM_OIDC_ISSUER must start with https://")
