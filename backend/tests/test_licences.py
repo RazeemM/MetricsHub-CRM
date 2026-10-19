@@ -352,3 +352,23 @@ def test_impossible_fee_is_left_out_and_listed(client):
     a = client.get("/api/dashboard/licences").json()
     assert {r["year"]: Decimal(r["fee"]) for r in a["invoiced_vs_fee"]}[y] == before[y]
     assert any(x["invoice"] == "BADFEE1" and x["report"] == "Sept.xlsx" for x in a["fees_excluded"])
+
+
+def test_dry_run_reports_fees_to_fill_without_saving_them():
+    line = ReportLine(doc_number="FEEDRY1", doc_date=TODAY, customer="Feedry Ltd", country="Spain",
+                      billing_company="Feedry Ltd", product="Probe Backup", license_type="term", start=TODAY,
+                      end=TODAY + dt.timedelta(days=365), term_days=365, quantity=Decimal("1"), net=Decimal("100.00"),
+                      fee=Decimal("51.00"), page=2)
+    rep = Report(title="t", lines=[line], warnings=[])
+    with SessionLocal() as db:
+        ent.import_report(db, rep, "feedry.xlsx", dry_run=False)
+        db.query(Entitlement).filter(Entitlement.source_ref == "FEEDRY1").update({"fee_amount": None})
+        db.commit()
+    with SessionLocal() as db:
+        dry = ent.import_report(db, rep, "feedry.xlsx", dry_run=True)
+        assert dry.fees_filled == 1 and dry.created == 0
+    with SessionLocal() as db:
+        assert db.query(Entitlement).filter(Entitlement.source_ref == "FEEDRY1").one().fee_amount is None
+        assert ent.import_report(db, rep, "feedry.xlsx", dry_run=False).fees_filled == 1
+    with SessionLocal() as db:
+        assert db.query(Entitlement).filter(Entitlement.source_ref == "FEEDRY1").one().fee_amount == Decimal("51.00")
