@@ -11,6 +11,7 @@ import {
   Indicator,
   List,
   Menu,
+  ScrollArea,
   Modal,
   NumberInput,
   SegmentedControl,
@@ -27,7 +28,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
-import { IconBell, IconCheck, IconChevronRight, IconFileUpload, IconPlus, IconTrash } from '@tabler/icons-react'
+import { IconArrowDown, IconArrowUp, IconArrowsSort, IconBell, IconCheck, IconChevronRight, IconFileUpload, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -302,6 +303,7 @@ export function LapsedLicencesCard() {
   const [resolving, setResolving] = useState<Holding | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [show, setShow] = useState('all')
+  const [sort, setSort] = useState<{ by: 'account' | 'date'; desc: boolean }>({ by: 'date', desc: true })
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkNote, setBulkNote] = useState('')
   const bulk = useApiMutation(
@@ -332,7 +334,28 @@ export function LapsedLicencesCard() {
     }
   }
   if (!data) return null
-  const rows = show === 'later' ? data.filter((h) => h.later_purchase) : show === 'none' ? data.filter((h) => !h.later_purchase) : data
+  const rows = (show === 'later' ? data.filter((h) => h.later_purchase) : show === 'none' ? data.filter((h) => !h.later_purchase) : [...data]).sort(
+    (a, b) => {
+      const c =
+        sort.by === 'account'
+          ? a.account_name.localeCompare(b.account_name) || a.product_name.localeCompare(b.product_name)
+          : (a.renewal_date ?? '').localeCompare(b.renewal_date ?? '') || a.account_name.localeCompare(b.account_name)
+      return sort.desc ? -c : c
+    },
+  )
+  const sortHeader = (by: 'account' | 'date', label: string) => {
+    const Icon = sort.by !== by ? IconArrowsSort : sort.desc ? IconArrowDown : IconArrowUp
+    return (
+      <UnstyledButton onClick={() => setSort({ by, desc: sort.by === by ? !sort.desc : by === 'date' })}>
+        <Group gap={4} wrap="nowrap">
+          <Text size="sm" fw={600}>
+            {label}
+          </Text>
+          <Icon size={14} color={sort.by === by ? undefined : 'var(--mantine-color-dimmed)'} />
+        </Group>
+      </UnstyledButton>
+    )
+  }
   return (
     <Card withBorder>
       <UnstyledButton onClick={toggle} w="100%" aria-expanded={open} aria-controls="lapsed-licences">
@@ -377,11 +400,11 @@ export function LapsedLicencesCard() {
         </Group>
       )}
       {data.length ? (
-        <Table.ScrollContainer minWidth={620} mah={520}>
-          <Table verticalSpacing={6} stickyHeader>
-            {canWrite && (
-              <Table.Thead>
-                <Table.Tr>
+        <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars>
+          <Table verticalSpacing={6} stickyHeader miw={620}>
+            <Table.Thead>
+              <Table.Tr>
+                {canWrite && (
                   <Table.Th w={36}>
                     <Checkbox
                       aria-label="Select all shown"
@@ -390,16 +413,21 @@ export function LapsedLicencesCard() {
                       onChange={(e) => setSelected(e.currentTarget.checked ? new Set(rows.map((h) => h.latest_line_id)) : new Set())}
                     />
                   </Table.Th>
-                  <Table.Th>
-                    <Text size="xs" c="dimmed">
-                      {selected.size ? `${selected.size} selected` : 'Select to resolve several at once'}
-                    </Text>
-                  </Table.Th>
-                  <Table.Th />
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-            )}
+                )}
+                <Table.Th>
+                  <Group gap="md">
+                    {sortHeader('account', 'Account')}
+                    {canWrite && (
+                      <Text size="xs" c="dimmed">
+                        {selected.size ? `${selected.size} selected` : 'Tick to resolve several at once'}
+                      </Text>
+                    )}
+                  </Group>
+                </Table.Th>
+                <Table.Th>{sortHeader('date', 'Ended')}</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
             <Table.Tbody>
               {rows.map((h) => (
                 <Table.Tr key={`${h.account_id}-${h.product_name}`} bg={selected.has(h.latest_line_id) ? 'var(--mantine-primary-color-light)' : undefined}>
@@ -449,7 +477,7 @@ export function LapsedLicencesCard() {
               ))}
             </Table.Tbody>
           </Table>
-        </Table.ScrollContainer>
+        </ScrollArea.Autosize>
       ) : (
         <Text size="sm" c="dimmed">
           No lapsed licences. Licences whose renewal date has passed show here until they are renewed or marked resolved.
@@ -582,8 +610,8 @@ export function MzdImport() {
             </Text>
           )}
           {result.preview.length > 0 && (
-            <Table.ScrollContainer minWidth={720} mah={320}>
-              <Table fz="xs" verticalSpacing={2} stickyHeader>
+            <ScrollArea.Autosize mah={320} type="auto" offsetScrollbars>
+              <Table fz="xs" verticalSpacing={2} stickyHeader miw={720}>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Customer</Table.Th>
@@ -607,7 +635,7 @@ export function MzdImport() {
                   ))}
                 </Table.Tbody>
               </Table>
-            </Table.ScrollContainer>
+            </ScrollArea.Autosize>
           )}
         </Stack>
       )}
