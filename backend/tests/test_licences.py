@@ -468,3 +468,30 @@ def test_rev_prefix_is_dropped_and_old_lines_renamed_not_duplicated():
         assert res.created == 0 and res.already_imported == 1
         rows = db.query(Entitlement).filter(Entitlement.source_ref == "R1").all()
         assert [r.product_name for r in rows] == ["BMC Helix Capacity Optimization for Storage Plus"]
+
+
+def test_bulk_resolve_and_later_purchase_hint(client):
+    y = TODAY.year
+
+    def ln(doc, customer, product, start, end):
+        return ReportLine(doc_number=doc, doc_date=start, customer=customer, country="Qatar", billing_company=customer,
+                          product=product, license_type="term", start=start, end=end, term_days=365,
+                          quantity=Decimal("4"), net=Decimal("40.00"), fee=Decimal("20.00"), page=2)
+    lines = [ln("BLK1", "Bulkone LLC", "Sentry Hardware Monitor", dt.date(y - 2, 1, 1), dt.date(y - 2, 12, 31)),
+             ln("BLK2", "Bulktwo LLC", "Sentry Storage Monitor", dt.date(y - 2, 1, 1), dt.date(y - 2, 12, 31)),
+             # Bulkone moved to a bundle afterwards: not the same family, so it stays open but shows the hint
+             ln("BLK3", "Bulkone LLC", "Sentry Bundle for BMC Helix Operations Management - Resource Unit",
+                dt.date(y, 1, 1), dt.date(y, 12, 31))]
+    with SessionLocal() as db:
+        ent.import_report(db, Report(title="t", lines=lines, warnings=[]), "bulk.xlsx", dry_run=False)
+    lapsed = {h["account_name"]: h for h in client.get("/api/licences/lapsed").json()
+              if h["account_name"] in ("Bulkone LLC", "Bulktwo LLC")}
+    assert lapsed["Bulkone LLC"]["later_purchase"]["product"].startswith("Sentry Bundle")
+    assert lapsed["Bulktwo LLC"]["later_purchase"] is None
+
+    ids = [h["latest_line_id"] for h in lapsed.values()]
+    assert client.post("/api/licences/resolve-bulk", json={"line_ids": []}).status_code == 422
+    r = client.post("/api/licences/resolve-bulk", json={"line_ids": ids})  # no note needed
+    assert r.status_code == 200 and r.json() == {"resolved": 2}
+    still = {h["account_name"] for h in client.get("/api/licences/lapsed").json()}
+    assert not still & {"Bulkone LLC", "Bulktwo LLC"}

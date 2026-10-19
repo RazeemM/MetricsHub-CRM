@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Collapse,
   Group,
   Indicator,
@@ -12,6 +13,7 @@ import {
   Menu,
   Modal,
   NumberInput,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Space,
@@ -52,6 +54,7 @@ export interface Holding {
   resolution: string | null
   resolved_by: string | null
   resolved_at: string | null
+  later_purchase?: { product: string; start: string | null; end: string | null; products: number } | null
 }
 
 interface Line {
@@ -297,6 +300,22 @@ export function LapsedLicencesCard() {
   const { canWrite } = useAuth()
   const { data } = useQuery({ queryKey: ['licences-lapsed'], queryFn: () => api<Holding[]>('/licences/lapsed') })
   const [resolving, setResolving] = useState<Holding | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [show, setShow] = useState('all')
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkNote, setBulkNote] = useState('')
+  const bulk = useApiMutation(
+    () => api<{ resolved: number }>('/licences/resolve-bulk', { method: 'POST', body: { line_ids: [...selected], note: bulkNote } }),
+    {
+      invalidate: [['licences-lapsed'], ['licences']],
+      success: 'Marked as resolved',
+      onSuccess: () => {
+        setSelected(new Set())
+        setBulkNote('')
+        setBulkOpen(false)
+      },
+    },
+  )
   const [open, setOpen] = useState(() => {
     try {
       return localStorage.getItem('crm.dashboard.lapsedOpen') === '1'
@@ -313,6 +332,7 @@ export function LapsedLicencesCard() {
     }
   }
   if (!data) return null
+  const rows = show === 'later' ? data.filter((h) => h.later_purchase) : show === 'none' ? data.filter((h) => !h.later_purchase) : data
   return (
     <Card withBorder>
       <UnstyledButton onClick={toggle} w="100%" aria-expanded={open} aria-controls="lapsed-licences">
@@ -334,12 +354,69 @@ export function LapsedLicencesCard() {
       </UnstyledButton>
       <Collapse in={open} id="lapsed-licences">
       <Space h="sm" />
+      {data.length > 0 && (
+        <Group justify="space-between" mb="xs" gap="xs">
+          <SegmentedControl
+            size="xs"
+            value={show}
+            onChange={(v) => {
+              setShow(v)
+              setSelected(new Set())
+            }}
+            data={[
+              { value: 'all', label: `All (${data.length})` },
+              { value: 'later', label: `Bought other products later (${data.filter((h) => h.later_purchase).length})` },
+              { value: 'none', label: `No later purchase (${data.filter((h) => !h.later_purchase).length})` },
+            ]}
+          />
+          {canWrite && (
+            <Button size="compact-sm" leftSection={<IconCheck size={14} />} disabled={!selected.size} onClick={() => setBulkOpen(true)}>
+              Resolve selected{selected.size ? ` (${selected.size})` : ''}
+            </Button>
+          )}
+        </Group>
+      )}
       {data.length ? (
-        <Table.ScrollContainer minWidth={560}>
-          <Table verticalSpacing={6}>
+        <Table.ScrollContainer minWidth={620} mah={520}>
+          <Table verticalSpacing={6} stickyHeader>
+            {canWrite && (
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={36}>
+                    <Checkbox
+                      aria-label="Select all shown"
+                      checked={rows.length > 0 && rows.every((h) => selected.has(h.latest_line_id))}
+                      indeterminate={rows.some((h) => selected.has(h.latest_line_id)) && !rows.every((h) => selected.has(h.latest_line_id))}
+                      onChange={(e) => setSelected(e.currentTarget.checked ? new Set(rows.map((h) => h.latest_line_id)) : new Set())}
+                    />
+                  </Table.Th>
+                  <Table.Th>
+                    <Text size="xs" c="dimmed">
+                      {selected.size ? `${selected.size} selected` : 'Select to resolve several at once'}
+                    </Text>
+                  </Table.Th>
+                  <Table.Th />
+                  <Table.Th />
+                </Table.Tr>
+              </Table.Thead>
+            )}
             <Table.Tbody>
-              {data.map((h) => (
-                <Table.Tr key={`${h.account_id}-${h.product_name}`}>
+              {rows.map((h) => (
+                <Table.Tr key={`${h.account_id}-${h.product_name}`} bg={selected.has(h.latest_line_id) ? 'var(--mantine-primary-color-light)' : undefined}>
+                  {canWrite && (
+                    <Table.Td w={36}>
+                      <Checkbox
+                        aria-label={`Select ${h.account_name} ${h.product_name}`}
+                        checked={selected.has(h.latest_line_id)}
+                        onChange={(e) => {
+                          const next = new Set(selected)
+                          if (e.currentTarget.checked) next.add(h.latest_line_id)
+                          else next.delete(h.latest_line_id)
+                          setSelected(next)
+                        }}
+                      />
+                    </Table.Td>
+                  )}
                   <Table.Td>
                     <Anchor component={Link} to={`/accounts/${h.account_id}?tab=licences`} size="sm" fw={600}>
                       {h.account_name}
@@ -348,6 +425,13 @@ export function LapsedLicencesCard() {
                       {h.product_name} · {qty(h.quantity)}
                       {h.reseller ? ` · via ${h.reseller}` : ''}
                     </Text>
+                    {h.later_purchase && (
+                      <Text size="xs" c="teal">
+                        Later bought {h.later_purchase.product}
+                        {h.later_purchase.end ? ` (to ${fmtDate(h.later_purchase.end)})` : ''}
+                        {h.later_purchase.products > 1 ? ` and ${h.later_purchase.products - 1} more` : ''}
+                      </Text>
+                    )}
                   </Table.Td>
                   <Table.Td style={{ whiteSpace: 'nowrap' }}>
                     <Text size="sm" c="red">
@@ -373,6 +457,23 @@ export function LapsedLicencesCard() {
       )}
       </Collapse>
       <ResolveModal holding={resolving} onClose={() => setResolving(null)} />
+      <Modal opened={bulkOpen} onClose={() => setBulkOpen(false)} title={`Resolve ${selected.size} lapsed licence${selected.size === 1 ? '' : 's'}`}>
+        <Stack>
+          <Textarea
+            label="What happened? (optional, saved on each)"
+            description="e.g. moved to the BMC Helix bundle, renewed outside MarketZone, churned"
+            autosize
+            minRows={2}
+            value={bulkNote}
+            onChange={(e) => setBulkNote(e.target.value)}
+          />
+          <Group justify="flex-end">
+            <Button leftSection={<IconCheck size={16} />} loading={bulk.isPending} onClick={() => bulk.mutate(undefined)}>
+              Mark {selected.size} resolved
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Card>
   )
 }

@@ -48,6 +48,7 @@ class Holding:
     resolved_by: str | None = None
     resolved_at: dt.datetime | None = None
     lines: list[int] = field(default_factory=list)
+    later_purchase: dict | None = None  # lapsed: the customer's latest purchase of another product afterwards
 
 
 INSTALMENT_DAYS = 200  # a paid period shorter than this (quarterly, half-yearly) is a billing instalment, not a term
@@ -311,7 +312,31 @@ def _esc(s: str) -> str:
 
 
 def lapsed(db: Session, include_resolved: bool = False) -> list[Holding]:
-    return [h for h in holdings(db) if h.status == "lapsed" and (include_resolved or not h.resolved)]
+    out = [h for h in holdings(db) if h.status == "lapsed" and (include_resolved or not h.resolved)]
+    # did the customer buy anything after it ended (often a bundle replacing single products)?
+    later: dict[int, list[Entitlement]] = defaultdict(list)
+    for e in db.scalars(select(Entitlement).where(Entitlement.account_id.in_({h.account_id for h in out}),
+                                                   Entitlement.quantity > 0)):
+        later[e.account_id].append(e)
+    for h in out:
+        mine = set(h.lines)
+        after = [e for e in later[h.account_id] if e.id not in mine and (
+            (e.end_date and e.end_date > h.renewal_date) or (e.start_date and e.start_date > h.renewal_date))]
+        if after:
+            r = max(after, key=lambda e: (e.end_date or e.start_date, e.id))
+            h.later_purchase = {"product": r.product_name, "start": r.start_date, "end": r.end_date,
+                                "products": len({e.product_name for e in after})}
+    return out
+
+
+def resolve(db: Session, line_ids: list[int], user_id: int | None, note: str | None) -> int:
+    """Mark lapsed licences resolved by the latest line of each (as the dashboard lists them)."""
+    now = dt.datetime.now(dt.UTC)
+    n = 0
+    for e in db.scalars(select(Entitlement).where(Entitlement.id.in_(line_ids))):
+        e.lapse_resolved_at, e.lapse_resolved_by_id, e.lapse_resolution = now, user_id, (note or "").strip() or None
+        n += 1
+    return n
 
 
 def auto_close_lapsed(db: Session, today: dt.date | None = None) -> int:

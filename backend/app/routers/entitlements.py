@@ -39,6 +39,7 @@ class HoldingOut(BaseModel):
     resolution: str | None
     resolved_by: str | None
     resolved_at: dt.datetime | None
+    later_purchase: dict | None = None
 
 
 class LineOut(BaseModel):
@@ -74,6 +75,11 @@ class EntitlementIn(BaseModel):
         if self.end_date is None and self.license_type != "perpetual":
             raise ValueError("an end / renewal date is needed (only perpetual licences have none)")
         return self
+
+
+class BulkResolveIn(BaseModel):
+    line_ids: list[int] = Field(min_length=1, max_length=1000)
+    note: str = Field(default="", max_length=2000)  # optional
 
 
 class ResolveIn(BaseModel):
@@ -129,6 +135,15 @@ def lapsed_licences(include_resolved: bool = False, db: Session = Depends(get_db
 def upcoming_renewals(days: int = 90, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return [_h(h) for h in ent.holdings(db) if h.status in ("renewal_due", "active")
             and h.days_to_renewal is not None and h.days_to_renewal <= days]
+
+
+@router.post("/licences/resolve-bulk")
+def resolve_bulk(data: BulkResolveIn, db: Session = Depends(get_db), user: User = Depends(require_writer)):
+    """Resolve several lapsed licences at once (their latest_line_id, as listed on the dashboard)."""
+    n = ent.resolve(db, data.line_ids, user.id, data.note)
+    audit(db, user, "entitlement", 0, "resolve_lapse_bulk", {"line_ids": data.line_ids, "note": data.note or None})
+    db.commit()
+    return {"resolved": n}
 
 
 @router.post("/licences/{line_id}/resolve", response_model=HoldingOut)
