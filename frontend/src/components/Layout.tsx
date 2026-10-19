@@ -18,6 +18,7 @@ import {
   IconFileInvoice,
   IconLayoutDashboard,
   IconLayoutKanban,
+  IconBulb,
   IconListDetails,
   IconMail,
   IconMailCog,
@@ -42,6 +43,7 @@ import { Logo } from './Logo'
 const NAV = [
   { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
   { to: '/pipeline', label: 'Pipeline', icon: IconLayoutKanban },
+  { to: '/insights', label: 'Insights', icon: IconBulb },
   { to: '/opportunities', label: 'Opportunities', icon: IconTargetArrow },
   { to: '/accounts', label: 'Accounts', icon: IconBuilding },
   { to: '/contacts', label: 'Contacts', icon: IconAddressBook },

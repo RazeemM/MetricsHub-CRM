@@ -11,6 +11,7 @@ import Campaigns, { CampaignDetail } from './pages/Campaigns'
 import Dashboard from './pages/Dashboard'
 import EmailTemplates, { EmailTemplateEdit } from './pages/EmailTemplates'
 import ImportPage from './pages/Import'
+import Insights from './pages/Insights'
 import Login, { SsoCallback } from './pages/Login'
 import MailingLists, { MailingListDetail } from './pages/MailingLists'
 import OpportunityDetail from './pages/OpportunityDetail'
@@ -49,6 +50,7 @@ export default function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/pipeline" element={<PipelineBoard />} />
+        <Route path="/insights" element={<Insights />} />
         <Route path="/opportunities" element={<Opportunities />} />
         <Route path="/opportunities/new" element={<OpportunityEdit />} />
         <Route path="/opportunities/:id" element={<OpportunityDetail />} />
