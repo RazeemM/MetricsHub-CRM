@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 from collections import defaultdict
 from decimal import Decimal
 
@@ -95,15 +96,56 @@ def summary(brand_id: int | None = None, db: Session = Depends(get_db), user: Us
 HELD = ("active", "renewal_due", "awaiting_report", "upcoming", "perpetual")
 
 
+def _service(e: Entitlement) -> tuple[dt.date | None, dt.date | None]:
+    """A line's paid period; a perpetual licence (no end) counts in its purchase year."""
+    start = e.start_date or e.document_date
+    end = e.end_date or (dt.date(start.year, 12, 31) if start else None)
+    return start, end
+
+
 def _line_date(e: Entitlement) -> dt.date | None:
     """When a licence line counts for revenue: its invoice date, else its start."""
     return e.document_date or e.start_date
 
 
+def _quarter(d: dt.date) -> int:
+    return (d.month - 1) // 3 + 1
+
+
+def _period_range(period: str) -> tuple[dt.date, dt.date] | None:
+    """ "2026" -> the calendar year, "2026-Q3" -> the quarter, "all" -> None."""
+    m = re.fullmatch(r"(\d{4})(?:-Q([1-4]))?", period or "")
+    if not m:
+        return None
+    y = int(m.group(1))
+    if not m.group(2):
+        return dt.date(y, 1, 1), dt.date(y, 12, 31)
+    q = int(m.group(2))
+    start = dt.date(y, 3 * q - 2, 1)
+    end = (dt.date(y + 1, 1, 1) if q == 4 else dt.date(y, 3 * q + 1, 1)) - dt.timedelta(days=1)
+    return start, end
+
+
+def _buckets(granularity: str, today: dt.date) -> list[tuple[str, dt.date, dt.date]]:
+    """The Active customers bars: the current and 2 previous years, or the current and 7 previous quarters."""
+    if granularity == "quarter":
+        y, q, out = today.year, _quarter(today), []
+        for _ in range(8):
+            start, end = _period_range(f"{y}-Q{q}")
+            out.append((f"{y} Q{q}", start, end))
+            y, q = (y, q - 1) if q > 1 else (y - 1, 4)
+        return out[::-1]
+    return [(str(y), *_period_range(str(y))) for y in (today.year - 2, today.year - 1, today.year)]
+
+
 @router.get("/licences")
-def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    """Data for the licence charts. period = "all" or a year ("2026") for the revenue breakdowns."""
+def licence_analytics(period: str = "all", granularity: str = "year", db: Session = Depends(get_db),
+                      _: User = Depends(get_current_user)):
+    """Data for the licence charts. period = "all", a year ("2026") or a quarter ("2026-Q3") for products and
+    revenue; granularity = "year" or "quarter" for the active-customer bars."""
     today = dt.date.today()
+    granularity = "quarter" if granularity == "quarter" else "year"
+    rng = _period_range(period)
     rows = db.execute(select(Entitlement, Account.country, Account.region)
                       .join(Account, Entitlement.account_id == Account.id)).all()
     # the report's Sold To Country on each line; the account's country only for licences added by hand
@@ -119,15 +161,24 @@ def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: Use
         if cur is None or (_line_date(e) or dt.date.min, e.id) > (_line_date(cur) or dt.date.min, cur.id):
             latest[e.account_id] = e
     region_of_account = {a: line_region[e.id] for a, e in latest.items()}
-    year = int(period) if period.isdigit() else None
     in_period = [e for e, _, _ in rows if e.net_amount is not None and _line_date(e)
-                 and (year is None or _line_date(e).year == year)]
+                 and (rng is None or rng[0] <= _line_date(e) <= rng[1])]
 
-    # products: customers holding each product now, and revenue in the period
+    # products: customers holding each product (now, or with a paid licence during the period), and revenue
     holders: dict[str, set[int]] = defaultdict(set)
-    for h in holdings(db, today=today):
-        if h.status in HELD:
-            holders[h.product_name].add(h.account_id)
+    if rng is None:
+        for h in holdings(db, today=today):
+            if h.status in HELD:
+                holders[h.product_name].add(h.account_id)
+    else:
+        held_qty: dict[tuple[str, int], Decimal] = defaultdict(Decimal)
+        for e, _, _ in rows:
+            start, end = _service(e)
+            if start and end and start <= rng[1] and end >= rng[0]:
+                held_qty[(e.product_name, e.account_id)] += e.quantity  # credit memos cancel their invoice
+        for (product, account_id), q in held_qty.items():
+            if q > 0:
+                holders[product].add(account_id)
     revenue_by_product: dict[str, Decimal] = defaultdict(Decimal)
     by_region: dict[str, Decimal] = defaultdict(Decimal)
     by_country: dict[str, Decimal] = defaultdict(Decimal)
@@ -139,21 +190,20 @@ def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: Use
     products = sorted(({"product": n, "customers": len(holders.get(n, ())), "revenue": revenue_by_product.get(n, 0)}
                        for n in names), key=lambda p: (-p["customers"], -p["revenue"], p["product"]))
 
-    # active customers per year and region: a paid licence period overlapping the year
-    years3 = [today.year - 2, today.year - 1, today.year]
-    qty: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
+    # active customers per year or quarter and region: a paid licence period overlapping it
+    buckets = _buckets(granularity, today)
+    qty: dict[tuple[str, int], Decimal] = defaultdict(Decimal)
     for e, _, _ in rows:
-        start = e.start_date or e.document_date
-        end = e.end_date or (dt.date(start.year, 12, 31) if start else None)  # perpetual: its purchase year
+        start, end = _service(e)
         if not start or not end:
             continue
-        for y in years3:
-            if start <= dt.date(y, 12, 31) and end >= dt.date(y, 1, 1):
-                qty[(y, e.account_id)] += e.quantity  # credit memos cancel their invoice
-    active = {y: defaultdict(int) for y in years3}
-    for (y, account_id), q in qty.items():
+        for label, b_start, b_end in buckets:
+            if start <= b_end and end >= b_start:
+                qty[(label, e.account_id)] += e.quantity  # credit memos cancel their invoice
+    active = {label: defaultdict(int) for label, _, _ in buckets}
+    for (label, account_id), q in qty.items():
         if q > 0:
-            active[y][region_of_account[account_id]] += 1
+            active[label][region_of_account[account_id]] += 1
 
     # invoiced (net) and paid to Sentry (fee) per invoice year
     years4 = [today.year - 3, today.year - 2, today.year - 1, today.year]
@@ -174,17 +224,20 @@ def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: Use
         else:
             money[d.year]["fee"] += e.fee_amount
 
-    years_with_data = sorted({_line_date(e).year for e, _, _ in rows if _line_date(e)}, reverse=True)
+    dates = [d for e, _, _ in rows if (d := _line_date(e))]
+    years_with_data = sorted({d.year for d in dates}, reverse=True)
+    quarters_with_data = sorted({(d.year, _quarter(d)) for d in dates}, reverse=True)
     return {
-        "period": period, "years": years_with_data, "currency": "USD",
+        "period": period, "granularity": granularity, "currency": "USD", "years": years_with_data,
+        "quarters": [f"{y}-Q{q}" for y, q in quarters_with_data],
         "products": products,
         "revenue_by_region": sorted(({"name": k, "amount": v} for k, v in by_region.items() if v),
                                     key=lambda r: -r["amount"]),
         "revenue_by_country": sorted(({"name": k, "amount": v} for k, v in by_country.items() if v),
                                      key=lambda r: -r["amount"]),
         "regions": [*REGIONS, "Other"],
-        "active_customers": [{"year": y, **{r: active[y].get(r, 0) for r in [*REGIONS, "Other"]},
-                              "total": sum(active[y].values())} for y in years3],
+        "active_customers": [{"label": label, **{r: active[label].get(r, 0) for r in [*REGIONS, "Other"]},
+                              "total": sum(active[label].values())} for label, _, _ in buckets],
         "invoiced_vs_fee": [{"year": y, **money[y]} for y in years4],
         "lines_missing_fee": missing_fee,
         "fees_excluded": sorted(implausible, key=lambda x: -x["fee"]),

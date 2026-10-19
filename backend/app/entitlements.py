@@ -137,6 +137,7 @@ class ImportResult:
     already_imported: int = 0
     fees_filled: int = 0  # already-imported lines that got their Sentry fee from this report
     countries_filled: int = 0  # already-imported lines that got their Sold To Country from this report
+    lapsed_closed: int = 0  # lapsed licences this report shows were renewed
     accounts_matched: dict = field(default_factory=dict)   # report name -> CRM account name
     accounts_created: list = field(default_factory=list)
     resellers: dict = field(default_factory=dict)
@@ -197,6 +198,14 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
         # so they all count, yet the PDF and the .xlsx of one quarter still recognise each other
         seen[ln.key] = seen.get(ln.key, 0) + 1
         key = ln.key if seen[ln.key] == 1 else f"{ln.key}|{seen[ln.key]}"
+        if key not in existing:
+            # a line read before the "Rev " product-name fix: rename it instead of adding a second copy
+            legacy = key.replace(f"|{ln.product.lower()}|", f"|rev {ln.product.lower()}|", 1)
+            if legacy in existing and (old := db.scalar(select(Entitlement).where(Entitlement.line_key == legacy))):
+                old.product_name, old.line_key = ln.product, key
+                existing.discard(legacy)
+                existing.add(key)
+                incomplete.pop(legacy, None) and incomplete.setdefault(key, old)
         if key in existing:
             res.already_imported += 1
             if (old := incomplete.get(key)) is not None:
@@ -237,6 +246,7 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
                                 "document": ln.doc_number})
     res.accounts_created = sorted(set(res.accounts_created))
     db.flush()
+    res.lapsed_closed = auto_close_lapsed(db)
     if dry_run:
         db.rollback()
     else:
@@ -302,6 +312,41 @@ def _esc(s: str) -> str:
 
 def lapsed(db: Session, include_resolved: bool = False) -> list[Holding]:
     return [h for h in holdings(db) if h.status == "lapsed" and (include_resolved or not h.resolved)]
+
+
+def auto_close_lapsed(db: Session, today: dt.date | None = None) -> int:
+    """Close lapsed licences that were renewed after all: any imported line (any report, or added by hand) for the
+    same customer and product family with dates after the lapsed renewal date. TrueSight, BMC Helix and OnPrem names
+    of one product count as the same. Returns how many were closed; the caller commits."""
+    from .product_families import family
+
+    open_lapses = [h for h in holdings(db, today=today) if h.status == "lapsed" and not h.resolved]
+    if not open_lapses:
+        return 0
+    later: dict[tuple[int, str], list[Entitlement]] = defaultdict(list)
+    for e in db.scalars(select(Entitlement).where(Entitlement.account_id.in_({h.account_id for h in open_lapses}),
+                                                   Entitlement.quantity > 0)):
+        later[(e.account_id, family(e.product_name))].append(e)
+    now = dt.datetime.now(dt.UTC)
+    closed = 0
+    for h in open_lapses:
+        mine = set(h.lines)
+        renewals = [e for e in later[(h.account_id, family(h.product_name))] if e.id not in mine and (
+            (e.end_date and e.end_date > h.renewal_date) or (e.start_date and e.start_date > h.renewal_date))]
+        if not renewals:
+            continue
+        r = max(renewals, key=lambda e: (e.end_date or e.start_date, e.id))
+        where = (r.report_name or "").replace("\\", "/").rsplit("/", 1)[-1] or ("added by hand" if r.source == "manual"
+                                                                            else r.source)
+        period = f"{r.start_date:%d %b %Y} – {r.end_date:%d %b %Y}" if r.start_date and r.end_date else \
+            f"from {(r.start_date or r.end_date):%d %b %Y}"
+        line = db.get(Entitlement, h.latest_line_id)
+        line.lapse_resolved_at, line.lapse_resolved_by_id = now, None
+        line.lapse_resolution = (f"Closed automatically: renewed as {r.product_name}, {period}"
+                                 f" ({where}{', ' + r.source_ref if r.source_ref else ''})")[:2000]
+        closed += 1
+    db.flush()
+    return closed
 
 
 def account_summary(db: Session, account_ids: list[int]) -> dict[int, dict]:

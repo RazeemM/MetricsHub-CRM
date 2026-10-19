@@ -190,7 +190,6 @@ def test_lapsed_stays_on_dashboard_until_resolved(client):
     lapsed = client.get("/api/licences/lapsed").json()
     assert [x["product_name"] for x in lapsed] == ["Sentry Storage Analyzer"]
     line = lapsed[0]["latest_line_id"]
-    assert client.post(f"/api/licences/{line}/resolve", json={"note": ""}).status_code == 422
     r = client.post(f"/api/licences/{line}/resolve", json={"note": "Customer moved to BHOM SaaS"})
     assert r.status_code == 200 and r.json()["resolved"] and r.json()["resolved_by"] == "Administrator"
     assert client.get("/api/licences/lapsed").json() == []
@@ -315,17 +314,25 @@ def test_dashboard_licence_analytics_and_fee_backfill(client):
 
     a = client.get("/api/dashboard/licences", params={"period": str(y)}).json()
     prods = {p["product"]: p for p in a["products"]}
-    assert prods["Probe Monitor"]["customers"] == 1  # the Saudi licence ended in February: no longer held
+    assert prods["Probe Monitor"]["customers"] == 2  # held during the year: Iberia, and Gulf until February
     assert Decimal(prods["Probe Monitor"]["revenue"]) == Decimal("1000.00")  # only this year's invoice
     regions = {r["name"]: Decimal(r["amount"]) for r in a["revenue_by_region"]}
     assert regions["Europe"] >= Decimal("1000.00") and "Asia Pacific" not in regions  # its invoice is from y-2
     countries = {r["name"] for r in a["revenue_by_country"]}
     assert "Spain" in countries and "Australia" not in countries
 
-    years = {row["year"]: row for row in a["active_customers"]}
-    assert set(years) == {y - 2, y - 1, y}
-    assert years[y]["Europe"] >= 1 and years[y]["Middle East & Africa"] >= 1  # Gulf licence ran into this year
-    assert years[y - 2]["Asia Pacific"] >= 1
+    years = {row["label"]: row for row in a["active_customers"]}
+    assert set(years) == {str(y - 2), str(y - 1), str(y)}
+    assert years[str(y)]["Europe"] >= 1 and years[str(y)]["Middle East & Africa"] >= 1  # Gulf ran into this year
+    assert years[str(y - 2)]["Asia Pacific"] >= 1
+
+    # quarters: eight bars, and products / revenue for one quarter only
+    q = client.get("/api/dashboard/licences", params={"granularity": "quarter", "period": f"{y}-Q1"}).json()
+    assert len(q["active_customers"]) == 8 and q["active_customers"][-1]["label"].startswith(str(y))
+    assert f"{y}-Q1" in q["quarters"]
+    q1 = {p["product"]: p for p in q["products"]}
+    assert Decimal(q1["Probe Monitor"]["revenue"]) == Decimal("1000.00")  # invoiced 15 Jan
+    assert q1["Probe Monitor"]["customers"] == 2  # Iberia (from Jan) and Gulf (until Feb) both held it in Q1
     money = {row["year"]: row for row in a["invoiced_vs_fee"]}
     assert [r["year"] for r in a["invoiced_vs_fee"]] == [y - 3, y - 2, y - 1, y]
     assert Decimal(money[y]["fee"]) >= Decimal("510.00") and Decimal(money[y - 1]["invoiced"]) >= Decimal("600.00")
@@ -408,3 +415,56 @@ def test_sold_to_country_of_the_report_wins_over_the_account(client):
     with SessionLocal() as db:
         assert ent.import_report(db, rep, "ctry.xlsx", dry_run=False).countries_filled == 1
         assert db.query(Entitlement).filter(Entitlement.source_ref == "CTRY1").one().country == "Saudi Arabia"
+
+
+def test_lapsed_closes_itself_when_renewed_later_and_note_is_optional(client):
+    y = TODAY.year
+    old = ReportLine(doc_number="LAP1", doc_date=dt.date(y - 2, 1, 1), customer="Autoclose Telecom", country="Kuwait",
+                     billing_company="Autoclose Telecom", product="Sentry Hardware Analyzer for TrueSight Operations Management",
+                     license_type="support", start=dt.date(y - 2, 1, 1), end=dt.date(y - 2, 12, 31), term_days=365,
+                     quantity=Decimal("50"), net=Decimal("900.00"), fee=Decimal("459.00"), page=2)
+    other = ReportLine(doc_number="LAP2", doc_date=dt.date(y - 2, 1, 1), customer="Noreason Bank", country="Kuwait",
+                       billing_company="Noreason Bank", product="Sentry Storage Monitor", license_type="term",
+                       start=dt.date(y - 2, 1, 1), end=dt.date(y - 2, 12, 31), term_days=365, quantity=Decimal("5"),
+                       net=Decimal("100.00"), fee=Decimal("51.00"), page=2)
+    with SessionLocal() as db:
+        ent.import_report(db, Report(title="t", lines=[old, other], warnings=[]), "old.xlsx", dry_run=False)
+    lapsed = {h["account_name"]: h for h in client.get("/api/licences/lapsed").json()}
+    assert "Autoclose Telecom" in lapsed and "Noreason Bank" in lapsed
+
+    # resolving needs no note
+    r = client.post(f"/api/licences/{lapsed['Noreason Bank']['latest_line_id']}/resolve", json={})
+    assert r.status_code == 200 and r.json()["resolved"] and r.json()["resolution"] is None
+
+    # a later report has the same customer with the BMC Helix version of that product: the lapse closes itself
+    renewed = ReportLine(doc_number="LAP3", doc_date=dt.date(y, 2, 1), customer="Autoclose Telecom", country="Kuwait",
+                         billing_company="Autoclose Telecom",
+                         product="Sentry Hardware Monitor for BMC Helix Operations Management OnPrem",
+                         license_type="term", start=dt.date(y, 2, 1), end=dt.date(y + 1, 1, 31), term_days=365,
+                         quantity=Decimal("50"), net=Decimal("1200.00"), fee=Decimal("612.00"), page=2)
+    with SessionLocal() as db:
+        res = ent.import_report(db, Report(title="t", lines=[renewed], warnings=[]), "new.xlsx", dry_run=False)
+        assert res.lapsed_closed >= 1
+    assert "Autoclose Telecom" not in {h["account_name"] for h in client.get("/api/licences/lapsed").json()}
+    closed = next(h for h in client.get("/api/licences/lapsed", params={"include_resolved": True}).json()
+                  if h["account_name"] == "Autoclose Telecom")
+    assert closed["resolution"].startswith("Closed automatically: renewed as Sentry Hardware Monitor for BMC Helix")
+    assert "new.xlsx" in closed["resolution"] and closed["resolved_by"] is None
+
+
+def test_rev_prefix_is_dropped_and_old_lines_renamed_not_duplicated():
+    from app.mzd_report import make_line
+    base = {"doc": "R1", "customer": "Revfix SA", "charge": "ONPREMSUBSCRIPT", "qty": 1, "net": 10,
+            "end": "12/31/2026", "start": "1/1/2026"}
+    assert make_line({**base, "product": "Rev BMC Helix Capacity Optimization for Storage Plus"}, 1).product == \
+        "BMC Helix Capacity Optimization for Storage Plus"
+    good = make_line({**base, "product": "BMC Helix Capacity Optimization for Storage Plus"}, 1)
+    bad = make_line({**base, "product": "Rev BMC Helix Capacity Optimization for Storage Plus"}, 1)
+    bad.product = "Rev BMC Helix Capacity Optimization for Storage Plus"  # as read before the fix
+    with SessionLocal() as db:
+        ent.import_report(db, Report(title="t", lines=[bad], warnings=[]), "jun24.pdf", dry_run=False)
+    with SessionLocal() as db:
+        res = ent.import_report(db, Report(title="t", lines=[good], warnings=[]), "jun24.pdf", dry_run=False)
+        assert res.created == 0 and res.already_imported == 1
+        rows = db.query(Entitlement).filter(Entitlement.source_ref == "R1").all()
+        assert [r.product_name for r in rows] == ["BMC Helix Capacity Optimization for Storage Plus"]

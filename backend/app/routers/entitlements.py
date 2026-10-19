@@ -77,7 +77,7 @@ class EntitlementIn(BaseModel):
 
 
 class ResolveIn(BaseModel):
-    note: str = Field(min_length=1, max_length=2000)
+    note: str = Field(default="", max_length=2000)  # optional
 
 
 def _h(h: ent.Holding) -> HoldingOut:
@@ -120,6 +120,8 @@ def delete_licence(line_id: int, db: Session = Depends(get_db), user: User = Dep
 @router.get("/licences/lapsed", response_model=list[HoldingOut])
 def lapsed_licences(include_resolved: bool = False, db: Session = Depends(get_db),
                     _: User = Depends(get_current_user)):
+    if ent.auto_close_lapsed(db):  # renewals added since (any report, or by hand) close their lapse
+        db.commit()
     return [_h(h) for h in ent.lapsed(db, include_resolved)]
 
 
@@ -133,7 +135,8 @@ def upcoming_renewals(days: int = 90, db: Session = Depends(get_db), _: User = D
 def resolve_lapse(line_id: int, data: ResolveIn, db: Session = Depends(get_db), user: User = Depends(require_writer)):
     """Take a lapsed licence off the dashboard (renewed outside the report, churned, duplicate...)."""
     e = get_or_404(db, Entitlement, line_id)
-    e.lapse_resolved_at, e.lapse_resolved_by_id, e.lapse_resolution = dt.datetime.now(dt.UTC), user.id, data.note
+    e.lapse_resolved_at, e.lapse_resolved_by_id = dt.datetime.now(dt.UTC), user.id
+    e.lapse_resolution = data.note.strip() or None
     audit(db, user, "entitlement", e.id, "resolve_lapse", {"note": data.note})
     db.commit()
     h = next(h for h in ent.holdings(db, [e.account_id]) if line_id in h.lines)

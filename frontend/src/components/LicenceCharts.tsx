@@ -8,13 +8,15 @@ import { LapsedLicencesCard } from './Licences'
 
 interface Analytics {
   period: string
+  granularity: 'year' | 'quarter'
   years: number[]
+  quarters: string[]
   currency: string
   products: { product: string; customers: number; revenue: string }[]
   revenue_by_region: { name: string; amount: string }[]
   revenue_by_country: { name: string; amount: string }[]
   regions: string[]
-  active_customers: ({ year: number; total: number } & Record<string, number>)[]
+  active_customers: ({ label: string; total: number } & Record<string, number>)[]
   invoiced_vs_fee: { year: number; invoiced: string; fee: string }[]
   lines_missing_fee: number
   fees_excluded: { report: string; invoice: string | null; date: string; product: string; invoiced: string; fee: string }[]
@@ -132,12 +134,21 @@ function SimpleTable({ head, rows }: { head: string[]; rows: (string | number)[]
 export function LicenceCharts() {
   const palette = usePalette()
   const [period, setPeriod] = useState('all')
+  const [granularity, setGranularity] = useState<'year' | 'quarter'>('year')
   const [productBy, setProductBy] = useState('customers')
-  const { data } = useQuery({ queryKey: ['licence-analytics', period], queryFn: () => api<Analytics>('/dashboard/licences', { params: { period } }) })
+  const { data } = useQuery({
+    queryKey: ['licence-analytics', period, granularity],
+    queryFn: () => api<Analytics>('/dashboard/licences', { params: { period, granularity } }),
+    placeholderData: (prev) => prev,
+  })
   if (!data) return null
   if (!data.years.length && !data.products.length) return <LapsedLicencesCard />
   const usd = (v: number) => money(v, data.currency)
-  const periodLabel = period === 'all' ? 'all imported reports' : period
+  const periodLabel = period === 'all' ? 'all imported reports' : period.replace('-', ' ')
+  const periodOptions = [
+    { value: 'all', label: 'All reports' },
+    ...(granularity === 'year' ? data.years.map((y) => ({ value: String(y), label: String(y) })) : data.quarters.map((q) => ({ value: q, label: q.replace('-', ' ') }))),
+  ]
 
   const productRows = data.products.map((p) => ({ name: p.product, value: productBy === 'customers' ? p.customers : Number(p.revenue) }))
   const productSlices = slices(productRows, palette)
@@ -155,17 +166,19 @@ export function LicenceCharts() {
       <Group justify="space-between">
         <Title order={4}>Licences</Title>
         <Group gap="xs">
-          <Text size="sm" c="dimmed">
-            Products and revenue for
-          </Text>
-          <Select
+          <SegmentedControl
             size="xs"
-            w={150}
-            allowDeselect={false}
-            value={period}
-            onChange={(v) => setPeriod(v ?? 'all')}
-            data={[{ value: 'all', label: 'All reports' }, ...data.years.map((y) => ({ value: String(y), label: String(y) }))]}
+            value={granularity}
+            onChange={(v) => {
+              setGranularity(v as 'year' | 'quarter')
+              setPeriod('all')
+            }}
+            data={[
+              { value: 'year', label: 'Calendar year' },
+              { value: 'quarter', label: 'Quarter' },
+            ]}
           />
+          <Select size="xs" w={140} allowDeselect={false} value={period} onChange={(v) => setPeriod(v ?? 'all')} data={periodOptions} aria-label="Period" />
         </Group>
       </Group>
       <LapsedLicencesCard />
@@ -173,7 +186,7 @@ export function LicenceCharts() {
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <ChartCard
             title="Products"
-            subtitle={productBy === 'customers' ? 'Customers holding each product now' : `Invoiced, ${periodLabel}`}
+            subtitle={productBy === 'customers' ? (period === 'all' ? 'Customers holding each product now' : `Customers with a paid licence in ${periodLabel}`) : `Invoiced, ${periodLabel}`}
             controls={
               <SegmentedControl
                 size="xs"
@@ -210,12 +223,12 @@ export function LicenceCharts() {
         <Grid.Col span={{ base: 12, lg: 6 }}>
           <ChartCard
             title="Active customers"
-            subtitle="Customers with a paid licence during the year, by region"
+            subtitle={`Customers with a paid licence during each ${granularity === 'year' ? 'calendar year' : 'quarter'}, by region`}
             chart={
               <BarChart
                 h={240}
-                data={data.active_customers.map((y) => ({ ...y, year: String(y.year) }))}
-                dataKey="year"
+                data={data.active_customers}
+                dataKey="label"
                 type="stacked"
                 series={usedRegions.map((r) => ({ name: r, color: regionColor[r] }))}
                 withLegend
@@ -227,7 +240,7 @@ export function LicenceCharts() {
                 tooltipAnimationDuration={150}
               />
             }
-            table={<SimpleTable head={['Year', ...usedRegions, 'Total']} rows={data.active_customers.map((y) => [y.year, ...usedRegions.map((r) => y[r]), y.total])} />}
+            table={<SimpleTable head={[granularity === 'year' ? 'Year' : 'Quarter', ...usedRegions, 'Total']} rows={data.active_customers.map((y) => [y.label, ...usedRegions.map((r) => y[r]), y.total])} />}
           />
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 6 }}>

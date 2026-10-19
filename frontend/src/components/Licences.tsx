@@ -159,7 +159,7 @@ export function AccountLicences({ accountId }: { accountId: number }) {
                   </Table.Td>
                   <Table.Td>
                     <Group gap={4} wrap="nowrap">
-                      <Tooltip disabled={!h.resolved} label={`${h.resolution} (${h.resolved_by}, ${fmtDate(h.resolved_at)})`} multiline w={260}>
+                      <Tooltip disabled={!h.resolved} label={`${h.resolution ?? 'Resolved'} (${h.resolved_by ?? 'automatically'}, ${fmtDate(h.resolved_at)})`} multiline w={260}>
                         <span>
                           <StatusBadge h={h} />
                         </span>
@@ -274,16 +274,15 @@ function ResolveModal({ holding, onClose }: { holding: Holding | null; onClose: 
             <b>{holding.account_name}</b> · {holding.product_name} ({qty(holding.quantity)}), ended {fmtDate(holding.renewal_date)}.
           </Text>
           <Textarea
-            label="What happened?"
+            label="What happened? (optional)"
             description="e.g. renewed outside MarketZone, moved to SaaS, churned"
             autosize
             minRows={2}
-            required
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
           <Group justify="flex-end">
-            <Button leftSection={<IconCheck size={16} />} disabled={!note.trim()} loading={resolve.isPending} onClick={() => resolve.mutate(undefined)}>
+            <Button leftSection={<IconCheck size={16} />} loading={resolve.isPending} onClick={() => resolve.mutate(undefined)}>
               Mark resolved
             </Button>
           </Group>

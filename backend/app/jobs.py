@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from . import campaigns
 from .db import SessionLocal, engine
-from .entitlements import send_renewal_notices
+from .entitlements import auto_close_lapsed, send_renewal_notices
 
 log = logging.getLogger("crm.jobs")
 LOCK_ID = 74210601  # pg advisory locks: only one API worker runs a job at a time
@@ -26,6 +26,9 @@ def run_renewals() -> int:
     with SessionLocal() as db:
         if not db.scalar(text("SELECT pg_try_advisory_xact_lock(:id)"), {"id": LOCK_ID}):
             return 0
+        closed = auto_close_lapsed(db)
+        if closed:
+            log.info("Closed %s lapsed licence(s) renewed later", closed)
         n = send_renewal_notices(db)  # commits, which also releases the lock
         if n:
             log.info("Renewal notices sent for %s account(s)", n)

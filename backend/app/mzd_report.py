@@ -173,6 +173,7 @@ def make_line(f: dict, page: int) -> ReportLine:
         charge, product = m.group(1), m.group(2)
     if (m := CHARGE_PREFIX.match(product)) and _license_type(m.group(1)) != "other":
         product = m.group(2)
+    product = re.sub(r"^Rev\s+", "", product)  # old layout: BMC's revenue code "Rev" in the product column
     doc = _clean(f.get("doc"))
     qty, net, fee = _num(f.get("qty")), _num(f.get("net")), _num(f.get("fee"))
     if not product or not doc:
