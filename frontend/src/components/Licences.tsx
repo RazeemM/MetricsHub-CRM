@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Collapse,
   Group,
   Indicator,
   List,
@@ -13,6 +14,7 @@ import {
   NumberInput,
   Select,
   SimpleGrid,
+  Space,
   Stack,
   Table,
   Text,
@@ -23,7 +25,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
-import { IconBell, IconCheck, IconFileUpload, IconPlus, IconTrash } from '@tabler/icons-react'
+import { IconBell, IconCheck, IconChevronRight, IconFileUpload, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -296,17 +298,43 @@ export function LapsedLicencesCard() {
   const { canWrite } = useAuth()
   const { data } = useQuery({ queryKey: ['licences-lapsed'], queryFn: () => api<Holding[]>('/licences/lapsed') })
   const [resolving, setResolving] = useState<Holding | null>(null)
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem('crm.dashboard.lapsedOpen') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggle = () => {
+    setOpen(!open)
+    try {
+      localStorage.setItem('crm.dashboard.lapsedOpen', open ? '0' : '1')
+    } catch {
+      /* storage unavailable: the card still works */
+    }
+  }
   if (!data) return null
   return (
     <Card withBorder>
-      <Group justify="space-between" mb="sm">
-        <Title order={5}>Lapsed licences</Title>
-        {data.length > 0 && (
-          <Badge color="red" variant="light">
-            {data.length} to follow up
-          </Badge>
-        )}
-      </Group>
+      <UnstyledButton onClick={toggle} w="100%" aria-expanded={open} aria-controls="lapsed-licences">
+        <Group justify="space-between">
+          <Group gap="xs">
+            <IconChevronRight size={18} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 150ms' }} />
+            <Title order={5}>Lapsed licences</Title>
+          </Group>
+          {data.length > 0 ? (
+            <Badge color="red" variant="light">
+              {data.length} to follow up
+            </Badge>
+          ) : (
+            <Text size="xs" c="dimmed">
+              none
+            </Text>
+          )}
+        </Group>
+      </UnstyledButton>
+      <Collapse in={open} id="lapsed-licences">
+      <Space h="sm" />
       {data.length ? (
         <Table.ScrollContainer minWidth={560}>
           <Table verticalSpacing={6}>
@@ -344,6 +372,7 @@ export function LapsedLicencesCard() {
           No lapsed licences. Licences whose renewal date has passed show here until they are renewed or marked resolved.
         </Text>
       )}
+      </Collapse>
       <ResolveModal holding={resolving} onClose={() => setResolving(null)} />
     </Card>
   )

@@ -382,7 +382,8 @@ class Entitlement(TimestampMixin, Base):
     license_type: Mapped[str] = mapped_column(String(16), default="term")  # term, support, saas, perpetual
     start_date: Mapped[dt.date | None] = mapped_column(Date)
     end_date: Mapped[dt.date | None] = mapped_column(Date, index=True)  # none for a perpetual licence
-    net_amount: Mapped[Decimal | None] = mapped_column(Money)
+    net_amount: Mapped[Decimal | None] = mapped_column(Money)  # invoiced to the customer (BMC: USD Total Net)
+    fee_amount: Mapped[Decimal | None] = mapped_column(Money)  # due to Sentry (BMC: Fee)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     source: Mapped[str] = mapped_column(String(40), default="manual")  # bmc_mzd, manual
     source_ref: Mapped[str | None] = mapped_column(String(80))  # invoice / credit memo number

@@ -1,4 +1,5 @@
 import datetime as dt
+from collections import defaultdict
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
@@ -6,7 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from ..db import get_db
-from ..models import Account, Activity, Brand, Contact, Opportunity, Stage, User
+from ..entitlements import holdings
+from ..models import Account, Activity, Brand, Contact, Entitlement, Opportunity, Stage, User
+from ..regions import REGIONS, region_of
 from ..security import get_current_user
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -85,4 +88,93 @@ def summary(brand_id: int | None = None, db: Session = Depends(get_db), user: Us
                          for o in db.scalars(closing_soon)],
         "my_tasks": [{"id": t.id, "subject": t.subject, "due_at": t.due_at, "contact_id": t.contact_id,
                       "account_id": t.account_id, "opportunity_id": t.opportunity_id} for t in my_tasks],
+    }
+
+
+# ---------------- licences (BMC MarketZone reports and licences added by hand) ----------------
+HELD = ("active", "renewal_due", "awaiting_report", "upcoming", "perpetual")
+
+
+def _line_date(e: Entitlement) -> dt.date | None:
+    """When a licence line counts for revenue: its invoice date, else its start."""
+    return e.document_date or e.start_date
+
+
+@router.get("/licences")
+def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Data for the licence charts. period = "all" or a year ("2026") for the revenue breakdowns."""
+    today = dt.date.today()
+    rows = db.execute(select(Entitlement, Account.country, Account.region)
+                      .join(Account, Entitlement.account_id == Account.id)).all()
+    region_of_account = {e.account_id: region_of(country, region) for e, country, region in rows}
+    country_of_account = {e.account_id: (country or "Unknown").strip() or "Unknown" for e, country, _ in rows}
+    year = int(period) if period.isdigit() else None
+    in_period = [e for e, _, _ in rows if e.net_amount is not None and _line_date(e)
+                 and (year is None or _line_date(e).year == year)]
+
+    # products: customers holding each product now, and revenue in the period
+    holders: dict[str, set[int]] = defaultdict(set)
+    for h in holdings(db, today=today):
+        if h.status in HELD:
+            holders[h.product_name].add(h.account_id)
+    revenue_by_product: dict[str, Decimal] = defaultdict(Decimal)
+    by_region: dict[str, Decimal] = defaultdict(Decimal)
+    by_country: dict[str, Decimal] = defaultdict(Decimal)
+    for e in in_period:
+        revenue_by_product[e.product_name] += e.net_amount
+        by_region[region_of_account[e.account_id]] += e.net_amount
+        by_country[country_of_account[e.account_id]] += e.net_amount
+    names = set(holders) | set(revenue_by_product)
+    products = sorted(({"product": n, "customers": len(holders.get(n, ())), "revenue": revenue_by_product.get(n, 0)}
+                       for n in names), key=lambda p: (-p["customers"], -p["revenue"], p["product"]))
+
+    # active customers per year and region: a paid licence period overlapping the year
+    years3 = [today.year - 2, today.year - 1, today.year]
+    qty: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
+    for e, _, _ in rows:
+        start = e.start_date or e.document_date
+        end = e.end_date or (dt.date(start.year, 12, 31) if start else None)  # perpetual: its purchase year
+        if not start or not end:
+            continue
+        for y in years3:
+            if start <= dt.date(y, 12, 31) and end >= dt.date(y, 1, 1):
+                qty[(y, e.account_id)] += e.quantity  # credit memos cancel their invoice
+    active = {y: defaultdict(int) for y in years3}
+    for (y, account_id), q in qty.items():
+        if q > 0:
+            active[y][region_of_account[account_id]] += 1
+
+    # invoiced (net) and paid to Sentry (fee) per invoice year
+    years4 = [today.year - 3, today.year - 2, today.year - 1, today.year]
+    money = {y: {"invoiced": Decimal(0), "fee": Decimal(0)} for y in years4}
+    missing_fee = 0
+    implausible = []  # a fee larger than the amount invoiced is a reporting error (seen: fee = net x quantity)
+    for e, _, _ in rows:
+        d = _line_date(e)
+        if e.net_amount is None or not d or d.year not in money:
+            continue
+        money[d.year]["invoiced"] += e.net_amount
+        if e.fee_amount is None:
+            missing_fee += e.source == "bmc_mzd"
+        elif e.net_amount > 0 and e.fee_amount > e.net_amount:
+            implausible.append({"report": (e.report_name or "").replace("\\", "/").rsplit("/", 1)[-1],
+                                "invoice": e.source_ref, "date": d, "account_id": e.account_id,
+                                "product": e.product_name, "invoiced": e.net_amount, "fee": e.fee_amount})
+        else:
+            money[d.year]["fee"] += e.fee_amount
+
+    years_with_data = sorted({_line_date(e).year for e, _, _ in rows if _line_date(e)}, reverse=True)
+    return {
+        "period": period, "years": years_with_data, "currency": "USD",
+        "products": products,
+        "revenue_by_region": sorted(({"name": k, "amount": v} for k, v in by_region.items() if v),
+                                    key=lambda r: -r["amount"]),
+        "revenue_by_country": sorted(({"name": k, "amount": v} for k, v in by_country.items() if v),
+                                     key=lambda r: -r["amount"]),
+        "regions": [*REGIONS, "Other"],
+        "active_customers": [{"year": y, **{r: active[y].get(r, 0) for r in [*REGIONS, "Other"]},
+                              "total": sum(active[y].values())} for y in years3],
+        "invoiced_vs_fee": [{"year": y, **money[y]} for y in years4],
+        "lines_missing_fee": missing_fee,
+        "fees_excluded": sorted(implausible, key=lambda x: -x["fee"]),
     }

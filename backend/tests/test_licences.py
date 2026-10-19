@@ -285,3 +285,70 @@ def test_unreliable_report_cannot_be_imported(client):
     r = client.post("/api/licences/import/bmc-mzd", files=files, data={"commit": "true"})
     assert r.status_code == 422 and "Not imported" in r.json()["detail"]
     assert client.get("/api/accounts", params={"q": "Wrongsum"}).json()["total"] == 0
+
+
+def test_dashboard_licence_analytics_and_fee_backfill(client):
+    y = TODAY.year
+    d = dt.date
+
+    def ln(doc, customer, country, product, qty, start, end, net, fee):
+        return ReportLine(doc_number=doc, doc_date=start, customer=customer, country=country, billing_company=customer,
+                          product=product, license_type="term", start=start, end=end, term_days=365,
+                          quantity=Decimal(qty), net=Decimal(net), fee=Decimal(fee), page=2)
+    lines = [
+        ln("AN1", "Analytica Iberia SA", "Spain", "Probe Monitor", "10", d(y, 1, 15), d(y + 1, 1, 14), "1000.00", "510.00"),
+        ln("AN2", "Analytica Gulf LLC", "Saudi Arabia", "Probe Monitor", "5", d(y - 1, 3, 1), d(y, 2, 28), "600.00",
+           "306.00"),
+        ln("AN3", "Analytica Pacific Pty", "Australia", "Probe Analyzer", "2", d(y - 2, 6, 1), d(y - 1, 5, 31), "400.00",
+           "204.00"),
+    ]
+    with SessionLocal() as db:
+        ent.import_report(db, Report(title="t", lines=lines, warnings=[]), "analytics.xlsx", dry_run=False)
+        # simulate lines imported before fees were stored, then a re-import fills them
+        db.query(Entitlement).filter(Entitlement.source_ref.in_(["AN1", "AN2", "AN3"])).update({"fee_amount": None})
+        db.commit()
+    a = client.get("/api/dashboard/licences").json()
+    assert a["lines_missing_fee"] >= 3
+    with SessionLocal() as db:
+        res = ent.import_report(db, Report(title="t", lines=lines, warnings=[]), "analytics.xlsx", dry_run=False)
+        assert res.fees_filled == 3 and res.created == 0
+
+    a = client.get("/api/dashboard/licences", params={"period": str(y)}).json()
+    prods = {p["product"]: p for p in a["products"]}
+    assert prods["Probe Monitor"]["customers"] == 1  # the Saudi licence ended in February: no longer held
+    assert Decimal(prods["Probe Monitor"]["revenue"]) == Decimal("1000.00")  # only this year's invoice
+    regions = {r["name"]: Decimal(r["amount"]) for r in a["revenue_by_region"]}
+    assert regions["Europe"] >= Decimal("1000.00") and "Asia Pacific" not in regions  # its invoice is from y-2
+    countries = {r["name"] for r in a["revenue_by_country"]}
+    assert "Spain" in countries and "Australia" not in countries
+
+    years = {row["year"]: row for row in a["active_customers"]}
+    assert set(years) == {y - 2, y - 1, y}
+    assert years[y]["Europe"] >= 1 and years[y]["Middle East & Africa"] >= 1  # Gulf licence ran into this year
+    assert years[y - 2]["Asia Pacific"] >= 1
+    money = {row["year"]: row for row in a["invoiced_vs_fee"]}
+    assert [r["year"] for r in a["invoiced_vs_fee"]] == [y - 3, y - 2, y - 1, y]
+    assert Decimal(money[y]["fee"]) >= Decimal("510.00") and Decimal(money[y - 1]["invoiced"]) >= Decimal("600.00")
+    assert a["regions"] == ["Americas", "Europe", "Middle East & Africa", "Asia Pacific", "Other"]
+
+
+def test_region_mapping():
+    from app.regions import region_of
+    assert region_of("USA") == "Americas" and region_of("Taiwan, Republic of China") == "Asia Pacific"
+    assert region_of("Saudi Arabia") == "Middle East & Africa" and region_of("Spain") == "Europe"
+    assert region_of("Atlantis") == "Other" and region_of(None) == "Other"
+    assert region_of("India", "Middle East & Africa") == "Middle East & Africa"  # the account's own region wins
+
+
+def test_impossible_fee_is_left_out_and_listed(client):
+    y = TODAY.year
+    bad = ReportLine(doc_number="BADFEE1", doc_date=dt.date(y, 2, 1), customer="Feecheck Corp", country="India",
+                     billing_company="Feecheck Corp", product="Probe Bundle", license_type="saas",
+                     start=dt.date(y, 2, 1), end=dt.date(y + 1, 1, 31), term_days=365, quantity=Decimal("628"),
+                     net=Decimal("11212.83"), fee=Decimal("7041657.24"), page=2)
+    before = {r["year"]: Decimal(r["fee"]) for r in client.get("/api/dashboard/licences").json()["invoiced_vs_fee"]}
+    with SessionLocal() as db:
+        ent.import_report(db, Report(title="t", lines=[bad], warnings=[]), "Sept.xlsx", dry_run=False)
+    a = client.get("/api/dashboard/licences").json()
+    assert {r["year"]: Decimal(r["fee"]) for r in a["invoiced_vs_fee"]}[y] == before[y]
+    assert any(x["invoice"] == "BADFEE1" and x["report"] == "Sept.xlsx" for x in a["fees_excluded"])

@@ -135,6 +135,7 @@ class ImportResult:
     lines: int = 0
     created: int = 0
     already_imported: int = 0
+    fees_filled: int = 0  # already-imported lines that got their Sentry fee from this report
     accounts_matched: dict = field(default_factory=dict)   # report name -> CRM account name
     accounts_created: list = field(default_factory=list)
     resellers: dict = field(default_factory=dict)
@@ -178,6 +179,9 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
                        totals_checked=report.checked_totals, warnings=list(report.warnings))
     brand = db.scalar(select(Brand).where(Brand.code == "SENTRY"))
     existing = set(db.scalars(select(Entitlement.line_key).where(Entitlement.line_key.is_not(None))))
+    # lines imported before the fee was stored get it from a re-import of the same report
+    no_fee = {e.line_key: e for e in db.scalars(select(Entitlement).where(
+        Entitlement.source == "bmc_mzd", Entitlement.fee_amount.is_(None), Entitlement.line_key.is_not(None)))}
     matcher = AccountMatcher(db)
     seen: dict[str, int] = {}
     for ln in report.lines:
@@ -187,6 +191,9 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
         key = ln.key if seen[ln.key] == 1 else f"{ln.key}|{seen[ln.key]}"
         if key in existing:
             res.already_imported += 1
+            if key in no_fee:
+                no_fee.pop(key).fee_amount = ln.fee
+                res.fees_filled += 1
             continue
         existing.add(key)
         acc, created = matcher.get_or_create(ln.customer, ln.country, "customer")
@@ -203,7 +210,8 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
         db.add(Entitlement(
             account_id=acc.id, reseller_id=reseller.id if reseller else None, brand_id=brand.id,
             product_name=ln.product, quantity=ln.quantity,
-            license_type=ln.license_type, start_date=ln.start, end_date=ln.end, net_amount=ln.net, currency="USD",
+            license_type=ln.license_type, start_date=ln.start, end_date=ln.end, net_amount=ln.net, fee_amount=ln.fee,
+            currency="USD",
             source="bmc_mzd", source_ref=ln.doc_number, document_date=ln.doc_date, report_name=report_name,
             line_key=key))
         res.created += 1
