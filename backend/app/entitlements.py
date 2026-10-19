@@ -136,6 +136,7 @@ class ImportResult:
     created: int = 0
     already_imported: int = 0
     fees_filled: int = 0  # already-imported lines that got their Sentry fee from this report
+    countries_filled: int = 0  # already-imported lines that got their Sold To Country from this report
     accounts_matched: dict = field(default_factory=dict)   # report name -> CRM account name
     accounts_created: list = field(default_factory=list)
     resellers: dict = field(default_factory=dict)
@@ -173,15 +174,22 @@ class AccountMatcher:
         return a, True
 
 
+def _fill_country(db: Session, account_id: int, country: str) -> None:
+    acc = db.get(Account, account_id)
+    if acc and not acc.country:
+        acc.country = country[:80]
+
+
 def import_report(db: Session, report: Report, report_name: str, *, dry_run: bool = True) -> ImportResult:
     res = ImportResult(dry_run=dry_run, report=report.title or report_name, source=report.source,
                        reliable=report.reliable, lines=len(report.lines),
                        totals_checked=report.checked_totals, warnings=list(report.warnings))
     brand = db.scalar(select(Brand).where(Brand.code == "SENTRY"))
     existing = set(db.scalars(select(Entitlement.line_key).where(Entitlement.line_key.is_not(None))))
-    # lines imported before the fee was stored get it from a re-import of the same report
-    no_fee = {e.line_key: e for e in db.scalars(select(Entitlement).where(
-        Entitlement.source == "bmc_mzd", Entitlement.fee_amount.is_(None), Entitlement.line_key.is_not(None)))}
+    # lines imported before the fee and the country were stored get them from a re-import of the same report
+    incomplete = {e.line_key: e for e in db.scalars(select(Entitlement).where(
+        Entitlement.source == "bmc_mzd", Entitlement.line_key.is_not(None),
+        (Entitlement.fee_amount.is_(None)) | (Entitlement.country.is_(None))))}
     matcher = AccountMatcher(db)
     seen: dict[str, int] = {}
     for ln in report.lines:
@@ -191,9 +199,14 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
         key = ln.key if seen[ln.key] == 1 else f"{ln.key}|{seen[ln.key]}"
         if key in existing:
             res.already_imported += 1
-            if key in no_fee:
-                no_fee.pop(key).fee_amount = ln.fee
-                res.fees_filled += 1
+            if (old := incomplete.get(key)) is not None:
+                if old.fee_amount is None:
+                    old.fee_amount = ln.fee
+                    res.fees_filled += 1
+                if old.country is None and ln.country:
+                    old.country = ln.country[:80]
+                    res.countries_filled += 1
+                    _fill_country(db, old.account_id, ln.country)
             continue
         existing.add(key)
         acc, created = matcher.get_or_create(ln.customer, ln.country, "customer")
@@ -203,6 +216,8 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
             res.accounts_matched[ln.customer] = acc.name
         if acc.account_type == "prospect":
             acc.account_type = "customer"
+        if not acc.country and ln.country:  # an existing account without a country takes the report's
+            acc.country = ln.country[:80]
         reseller = None
         if ln.billing_company and norm_name(ln.billing_company) != norm_name(ln.customer):
             reseller, r_created = matcher.get_or_create(ln.billing_company, ln.country, "reseller")
@@ -211,7 +226,7 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
             account_id=acc.id, reseller_id=reseller.id if reseller else None, brand_id=brand.id,
             product_name=ln.product, quantity=ln.quantity,
             license_type=ln.license_type, start_date=ln.start, end_date=ln.end, net_amount=ln.net, fee_amount=ln.fee,
-            currency="USD",
+            currency="USD", country=(ln.country or None) and ln.country[:80],
             source="bmc_mzd", source_ref=ln.doc_number, document_date=ln.doc_date, report_name=report_name,
             line_key=key))
         res.created += 1

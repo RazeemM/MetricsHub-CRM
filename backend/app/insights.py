@@ -36,7 +36,8 @@ def load(db: Session) -> list[Line]:
     resellers = {a.id: a.name for a in db.scalars(select(Account).where(
         Account.id.in_({e.reseller_id for e, _ in rows if e.reseller_id})))}
     owners = {u.id: u.full_name for u in db.scalars(select(User))}
-    return [Line(e, a.name, region_of(a.country, a.region), resellers.get(e.reseller_id, DIRECT),
+    # region from the report's Sold To Country on the line; the account's country only for licences added by hand
+    return [Line(e, a.name, region_of(e.country or a.country, a.region), resellers.get(e.reseller_id, DIRECT),
                  owners.get(a.owner_id)) for e, a in rows]
 
 

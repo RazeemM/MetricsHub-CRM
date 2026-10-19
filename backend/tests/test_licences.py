@@ -372,3 +372,39 @@ def test_dry_run_reports_fees_to_fill_without_saving_them():
         assert ent.import_report(db, rep, "feedry.xlsx", dry_run=False).fees_filled == 1
     with SessionLocal() as db:
         assert db.query(Entitlement).filter(Entitlement.source_ref == "FEEDRY1").one().fee_amount == Decimal("51.00")
+
+
+def test_sold_to_country_of_the_report_wins_over_the_account(client):
+    """A customer matched to an existing account keeps the report's Sold To Country on its lines."""
+    acc = client.post("/api/accounts", json={"name": "Countrycheck Holdings"}).json()  # no country
+    y = TODAY.year
+    line = ReportLine(doc_number="CTRY1", doc_date=dt.date(y, 3, 1), customer="Countrycheck Holdings",
+                      country="Saudi Arabia", billing_company="Countrycheck Holdings", product="Probe Storage",
+                      license_type="term", start=dt.date(y, 3, 1), end=dt.date(y + 1, 2, 28), term_days=365,
+                      quantity=Decimal("3"), net=Decimal("700.00"), fee=Decimal("357.00"), page=2)
+    rep = Report(title="t", lines=[line], warnings=[])
+    with SessionLocal() as db:
+        ent.import_report(db, rep, "ctry.xlsx", dry_run=False)
+        e = db.query(Entitlement).filter(Entitlement.source_ref == "CTRY1").one()
+        assert e.country == "Saudi Arabia" and e.account_id == acc["id"]
+    assert client.get(f"/api/accounts/{acc['id']}").json()["country"] == "Saudi Arabia"  # empty account filled
+
+    # the account says something else: the line's country still decides the charts
+    client.patch(f"/api/accounts/{acc['id']}", json={"country": "France"})
+    a = client.get("/api/dashboard/licences", params={"period": str(y)}).json()
+    countries = {r["name"] for r in a["revenue_by_country"]}
+    assert "Saudi Arabia" in countries
+    with SessionLocal() as db:
+        from app import insights
+        ln = next(x for x in insights.load(db) if x.e.source_ref == "CTRY1")
+        assert ln.region == "Middle East & Africa"
+
+    # lines imported before the country was stored get it from a re-import
+    with SessionLocal() as db:
+        db.query(Entitlement).filter(Entitlement.source_ref == "CTRY1").update({"country": None})
+        db.commit()
+        dry = ent.import_report(db, rep, "ctry.xlsx", dry_run=True)
+        assert dry.countries_filled == 1 and dry.created == 0
+    with SessionLocal() as db:
+        assert ent.import_report(db, rep, "ctry.xlsx", dry_run=False).countries_filled == 1
+        assert db.query(Entitlement).filter(Entitlement.source_ref == "CTRY1").one().country == "Saudi Arabia"

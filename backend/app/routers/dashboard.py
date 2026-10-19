@@ -106,8 +106,19 @@ def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: Use
     today = dt.date.today()
     rows = db.execute(select(Entitlement, Account.country, Account.region)
                       .join(Account, Entitlement.account_id == Account.id)).all()
-    region_of_account = {e.account_id: region_of(country, region) for e, country, region in rows}
-    country_of_account = {e.account_id: (country or "Unknown").strip() or "Unknown" for e, country, _ in rows}
+    # the report's Sold To Country on each line; the account's country only for licences added by hand
+    def line_country(e: Entitlement, account_country: str | None) -> str:
+        return ((e.country or account_country or "").strip()) or "Unknown"
+
+    line_region = {e.id: region_of(line_country(e, c), r) for e, c, r in rows}
+    country_of_line = {e.id: line_country(e, c) for e, c, _ in rows}
+    # an account counts in the region of its most recent licence line
+    latest: dict[int, Entitlement] = {}
+    for e, _, _ in rows:
+        cur = latest.get(e.account_id)
+        if cur is None or (_line_date(e) or dt.date.min, e.id) > (_line_date(cur) or dt.date.min, cur.id):
+            latest[e.account_id] = e
+    region_of_account = {a: line_region[e.id] for a, e in latest.items()}
     year = int(period) if period.isdigit() else None
     in_period = [e for e, _, _ in rows if e.net_amount is not None and _line_date(e)
                  and (year is None or _line_date(e).year == year)]
@@ -122,8 +133,8 @@ def licence_analytics(period: str = "all", db: Session = Depends(get_db), _: Use
     by_country: dict[str, Decimal] = defaultdict(Decimal)
     for e in in_period:
         revenue_by_product[e.product_name] += e.net_amount
-        by_region[region_of_account[e.account_id]] += e.net_amount
-        by_country[country_of_account[e.account_id]] += e.net_amount
+        by_region[line_region[e.id]] += e.net_amount
+        by_country[country_of_line[e.id]] += e.net_amount
     names = set(holders) | set(revenue_by_product)
     products = sorted(({"product": n, "customers": len(holders.get(n, ())), "revenue": revenue_by_product.get(n, 0)}
                        for n in names), key=lambda p: (-p["customers"], -p["revenue"], p["product"]))
