@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -275,6 +275,7 @@ class LineItemIn(BaseModel):
     discount_pct: Decimal = Field(default=Decimal(0), ge=0, le=100)
     term_months: int | None = Field(default=None, ge=1, le=120)
     billing_type: BillingType | None = None
+    unit: Literal["deal_total"] | None = None  # custom lines only: unit_price is the line's total value
 
 
 class LineItemOut(ORM):

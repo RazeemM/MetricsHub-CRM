@@ -16,6 +16,13 @@ def test_one_time_line_ignores_term():
     assert line_total(3, "1500", 0, 36, "one_time") == Decimal("4500.00")
 
 
+def test_deal_total_line_is_not_multiplied_by_term():
+    assert line_total(1, "120000", 0, 36, "recurring", "deal_total") == Decimal("120000.00")
+    t = compute_totals([SimpleNamespace(quantity=Decimal(1), unit_price=Decimal(120000), discount_pct=Decimal(0),
+                                        term_months=None, billing_type="recurring", unit="deal_total")], 24)
+    assert (t.tcv, t.arr) == (Decimal("120000.00"), Decimal("60000.00"))
+
+
 def test_rounding_half_up():
     assert line_total(1, "0.125", 0, 1, "recurring") == Decimal("0.13")
 

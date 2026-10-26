@@ -1,5 +1,5 @@
 import { BarChart, DonutChart } from '@mantine/charts'
-import { Alert, Box, Card, Grid, Group, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, Title, useComputedColorScheme } from '@mantine/core'
+import { Alert, Box, Card, Grid, Group, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, Title, useComputedColorScheme } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { api } from '../api'
@@ -103,8 +103,8 @@ function Pie({ data, format, total, empty }: { data: { name: string; value: numb
 
 function SimpleTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
   return (
-    <Table.ScrollContainer minWidth={300} mah={260}>
-      <Table fz="xs" verticalSpacing={4} stickyHeader>
+    <ScrollArea.Autosize mah={260} type="auto" offsetScrollbars>
+      <Table miw={300} fz="xs" verticalSpacing={4} stickyHeader>
         <Table.Thead>
           <Table.Tr>
             {head.map((h, i) => (
@@ -126,7 +126,7 @@ function SimpleTable({ head, rows }: { head: string[]; rows: (string | number)[]
           ))}
         </Table.Tbody>
       </Table>
-    </Table.ScrollContainer>
+    </ScrollArea.Autosize>
   )
 }
 

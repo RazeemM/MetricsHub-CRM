@@ -1,8 +1,10 @@
 import { Badge, Group, Pagination, Select, Stack, Text, Title, type SelectProps } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useAccountSearch, useContactSearch, useUsers } from '../hooks'
+import type { Account, Contact } from '../types'
+import { AccountFormModal, ContactFormModal } from './forms'
 import { ACCOUNT_TYPE_COLORS, ACCOUNT_TYPES, LIFECYCLE_COLORS, LIFECYCLES } from '../labels'
 
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
@@ -50,26 +52,64 @@ type PickerProps = Omit<SelectProps, 'data' | 'value' | 'onChange'> & {
   initialLabel?: string | null
 }
 
-/** Searchable account picker (server-side search). */
-export function AccountPicker({ value, onChange, initialLabel, types, ...rest }: PickerProps & { types?: string[] }) {
+const NEW = '__new'
+
+/** Adds "+ Add “typed text” as a new …" when nothing listed matches what was typed. */
+function withCreate(options: { value: string; label: string }[], search: string, value: number | null | undefined, what: string, allow?: boolean) {
+  const q = search.trim()
+  const selected = options.find((o) => o.value === String(value ?? ''))
+  if (!allow || !q || q === selected?.label || options.some((o) => o.label.toLowerCase() === q.toLowerCase())) return options
+  return [...options, { value: NEW, label: `+ Add "${q}" as a new ${what}` }]
+}
+
+/** Searchable account picker (server-side search). With allowCreate, offers to add the typed name as a new account. */
+export function AccountPicker({
+  value,
+  onChange,
+  initialLabel,
+  types,
+  allowCreate,
+  ...rest
+}: PickerProps & { types?: string[]; allowCreate?: boolean }) {
   const [search, setSearch] = useState('')
   const [debounced] = useDebouncedValue(search, 250)
   const { data } = useAccountSearch(debounced, types)
+  const [creating, setCreating] = useState<string | null>(null)
+  const [created, setCreated] = useState<{ value: string; label: string } | null>(null)
   const options = (data?.items ?? []).map((a) => ({ value: String(a.id), label: a.name }))
-  if (value && initialLabel && !options.some((o) => o.value === String(value)))
-    options.unshift({ value: String(value), label: initialLabel })
+  const label = created?.value === String(value) ? created.label : initialLabel
+  if (value && label && !options.some((o) => o.value === String(value))) options.unshift({ value: String(value), label })
+  const accountType = types?.[0]
+  const defaults = useMemo(
+    () => ({ name: creating ?? '', ...(accountType ? { account_type: accountType as Account['account_type'] } : {}) }),
+    [creating, accountType],
+  )
+  const what = types?.length === 1 ? (ACCOUNT_TYPES[types[0]] ?? 'account').toLowerCase() : 'account'
   return (
-    <Select
-      searchable
-      clearable
-      data={options}
-      value={value ? String(value) : null}
-      onChange={(v) => onChange(v ? Number(v) : null)}
-      onSearchChange={setSearch}
-      nothingFoundMessage="No matching account"
-      filter={({ options }) => options}
-      {...rest}
-    />
+    <>
+      <Select
+        searchable
+        clearable
+        data={withCreate(options, debounced, value, what, allowCreate)}
+        value={value ? String(value) : null}
+        onChange={(v) => (v === NEW ? setCreating(search.trim()) : onChange(v ? Number(v) : null))}
+        onSearchChange={setSearch}
+        nothingFoundMessage="No matching account"
+        filter={({ options }) => options}
+        {...rest}
+      />
+      {allowCreate && (
+        <AccountFormModal
+          opened={creating !== null}
+          onClose={() => setCreating(null)}
+          defaults={defaults}
+          onSaved={(a) => {
+            setCreated({ value: String(a.id), label: a.name })
+            onChange(a.id)
+          }}
+        />
+      )}
+    </>
   )
 }
 
@@ -79,29 +119,54 @@ export function ContactPicker({
   initialLabel,
   accountId,
   roles,
+  allowCreate,
   ...rest
-}: PickerProps & { accountId?: number | null; roles?: string[] }) {
+}: PickerProps & { accountId?: number | null; roles?: string[]; allowCreate?: boolean }) {
   const [search, setSearch] = useState('')
   const [debounced] = useDebouncedValue(search, 250)
   const { data } = useContactSearch(debounced, accountId, roles)
+  const [creating, setCreating] = useState<string | null>(null)
+  const [created, setCreated] = useState<{ value: string; label: string } | null>(null)
   const options = (data?.items ?? []).map((c) => ({
     value: String(c.id),
     label: `${c.full_name}${c.account ? ` (${c.account.name})` : ''}`,
   }))
-  if (value && initialLabel && !options.some((o) => o.value === String(value)))
-    options.unshift({ value: String(value), label: initialLabel })
+  const label = created?.value === String(value) ? created.label : initialLabel
+  if (value && label && !options.some((o) => o.value === String(value))) options.unshift({ value: String(value), label })
+  const role = roles?.[0]
+  const defaults = useMemo(() => {
+    const [first, ...last] = (creating ?? '').split(/\s+/)
+    return {
+      ...(creating?.includes('@') ? { email: creating } : { first_name: first, last_name: last.join(' ') }),
+      account_id: accountId ?? null,
+      ...(role ? { role: role as Contact['role'] } : {}),
+    }
+  }, [creating, accountId, role])
   return (
-    <Select
-      searchable
-      clearable
-      data={options}
-      value={value ? String(value) : null}
-      onChange={(v) => onChange(v ? Number(v) : null)}
-      onSearchChange={setSearch}
-      nothingFoundMessage="No matching contact"
-      filter={({ options }) => options}
-      {...rest}
-    />
+    <>
+      <Select
+        searchable
+        clearable
+        data={withCreate(options, debounced, value, 'contact', allowCreate)}
+        value={value ? String(value) : null}
+        onChange={(v) => (v === NEW ? setCreating(search.trim()) : onChange(v ? Number(v) : null))}
+        onSearchChange={setSearch}
+        nothingFoundMessage="No matching contact"
+        filter={({ options }) => options}
+        {...rest}
+      />
+      {allowCreate && (
+        <ContactFormModal
+          opened={creating !== null}
+          onClose={() => setCreating(null)}
+          defaults={defaults}
+          onSaved={(c) => {
+            setCreated({ value: String(c.id), label: c.full_name })
+            onChange(c.id)
+          }}
+        />
+      )}
+    </>
   )
 }
 

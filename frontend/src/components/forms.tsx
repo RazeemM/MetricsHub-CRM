@@ -12,17 +12,19 @@ export function AccountFormModal({
   opened,
   onClose,
   account,
+  defaults,
   onSaved,
 }: {
   opened: boolean
   onClose: () => void
   account?: Account | null
+  defaults?: AccountDraft
   onSaved?: (a: Account) => void
 }) {
   const [v, setV] = useState<AccountDraft>({})
   useEffect(() => {
-    if (opened) setV(account ? { ...account } : { account_type: 'prospect' })
-  }, [opened, account])
+    if (opened) setV(account ? { ...account } : { account_type: 'prospect', ...defaults })
+  }, [opened, account, defaults])
   const set = (k: keyof Account) => (val: unknown) => setV((s) => ({ ...s, [k]: val }))
   const save = useApiMutation(
     (body: AccountDraft) =>

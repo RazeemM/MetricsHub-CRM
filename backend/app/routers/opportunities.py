@@ -226,7 +226,7 @@ def price_preview(data: PricePreviewIn, db: Session = Depends(get_db), _: User =
             price = entry.unit_price if entry else Decimal(0)
         ln.name = item.name or (product.name if product else "")
         ln.quantity, ln.unit_price, ln.discount_pct = item.quantity, price or Decimal(0), item.discount_pct
-        ln.term_months = item.term_months
+        ln.term_months, ln.unit = item.term_months, (product.unit if product else item.unit)
         ln.billing_type = item.billing_type or (product.billing_type if product else "recurring")
         lines.append(ln)
     totals = compute_totals(lines, data.term_months)

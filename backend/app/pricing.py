@@ -2,6 +2,8 @@
 
 Recurring line:  quantity x unit price (per month) x term months x (1 - discount%)
 One-time line:   quantity x unit price x (1 - discount%)
+Deal-total line ("Multiple products", unit = deal_total): the unit price is the whole line value, never
+multiplied by the term; a recurring one still counts towards ARR over its term.
 
 TCV  = sum of all line totals
 ARR  = sum over recurring lines of (line total / term months x 12)
@@ -10,19 +12,21 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 CENT = Decimal("0.01")
+DEAL_TOTAL = "deal_total"  # unit of a line holding a total value (several products, no breakdown)
 
 
 def _d(value) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value or 0))
 
 
-def line_total(quantity, unit_price, discount_pct, term_months: int | None, billing_type: str) -> Decimal:
+def line_total(quantity, unit_price, discount_pct, term_months: int | None, billing_type: str,
+               unit: str | None = None) -> Decimal:
     qty, price, disc = _d(quantity), _d(unit_price), _d(discount_pct)
     if disc < 0 or disc > 100:
         raise ValueError("discount must be between 0 and 100")
     factor = (Decimal(100) - disc) / Decimal(100)
     total = qty * price * factor
-    if billing_type == "recurring":
+    if billing_type == "recurring" and unit != DEAL_TOTAL:
         total *= Decimal(term_months or 0)
     return total.quantize(CENT, rounding=ROUND_HALF_UP)
 
@@ -43,7 +47,8 @@ def compute_totals(lines, default_term: int) -> Totals:
     recurring = one_time = arr = Decimal(0)
     for ln in lines:
         term = ln.term_months or default_term
-        ln.line_total = line_total(ln.quantity, ln.unit_price, ln.discount_pct, term, ln.billing_type)
+        ln.line_total = line_total(ln.quantity, ln.unit_price, ln.discount_pct, term, ln.billing_type,
+                                  getattr(ln, "unit", None))
         if ln.billing_type == "recurring":
             recurring += ln.line_total
             if term:

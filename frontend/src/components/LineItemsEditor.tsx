@@ -1,6 +1,10 @@
-import { ActionIcon, Badge, Button, Group, NumberInput, Paper, Select, SimpleGrid, Stack, Table, Text, TextInput } from '@mantine/core'
-import { IconPlus, IconTrash } from '@tabler/icons-react'
-import { money, money2, UNITS } from '../labels'
+import { ActionIcon, Badge, Button, Group, Modal, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Table, Text, TextInput } from '@mantine/core'
+import { IconPlus, IconStack2, IconTrash } from '@tabler/icons-react'
+import { useState } from 'react'
+import { api } from '../api'
+import { useAuth } from '../auth'
+import { useApiMutation } from '../hooks'
+import { money, money2, toOptions, UNITS } from '../labels'
 import type { LineItem, PriceBook, Product } from '../types'
 
 export interface DraftLine {
@@ -15,10 +19,16 @@ export interface DraftLine {
   term_months: number | null
 }
 
+/** A line holding the total value of several products, with no per-product breakdown. */
+export const DEAL_TOTAL = 'deal_total'
+export const isDealTotal = (l: DraftLine) => !l.product_id && l.unit === DEAL_TOTAL
+const MULTIPLE = '__multiple'
+const NEW_PRODUCT = '__new_product'
+
 /** Mirrors backend pricing.py so the user sees totals as they type. */
 export function lineTotal(l: DraftLine, defaultTerm: number) {
   const base = l.quantity * l.unit_price * (1 - (l.discount_pct || 0) / 100)
-  const total = l.billing_type === 'recurring' ? base * (l.term_months || defaultTerm) : base
+  const total = l.billing_type === 'recurring' && !isDealTotal(l) ? base * (l.term_months || defaultTerm) : base
   return Math.round(total * 100) / 100
 }
 
@@ -60,6 +70,7 @@ export function LineItemsEditor({
   term,
   currency,
   readOnly,
+  brandId,
 }: {
   lines: DraftLine[]
   onChange: (l: DraftLine[]) => void
@@ -68,16 +79,23 @@ export function LineItemsEditor({
   term: number
   currency: string
   readOnly?: boolean
+  brandId?: number | null
 }) {
+  const { isAdmin } = useAuth()
+  const [newProduct, setNewProduct] = useState<{ key: string; name: string } | null>(null)
   const update = (key: string, patch: Partial<DraftLine>) => onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
-  const add = () =>
-    onChange([
-      ...lines,
-      { key: `n-${Date.now()}`, product_id: null, name: '', billing_type: 'recurring', unit: null, quantity: 1, unit_price: 0, discount_pct: 0, term_months: null },
-    ])
-  const pickProduct = (key: string, id: string | null) => {
+  const blank = (): DraftLine => ({ key: `n-${Date.now()}`, product_id: null, name: '', billing_type: 'recurring', unit: null, quantity: 1, unit_price: 0, discount_pct: 0, term_months: null })
+  const multiple = { product_id: null, name: 'Multiple products', unit: DEAL_TOTAL, quantity: 1, discount_pct: 0 }
+  const add = () => onChange([...lines, blank()])
+  const addTotal = () => onChange([...lines, { ...blank(), ...multiple }])
+  const pickProduct = (key: string, id: string | null, search: string) => {
+    if (id === MULTIPLE) return update(key, multiple)
+    if (id === NEW_PRODUCT) return setNewProduct({ key, name: search })
     const p = products.find((x) => String(x.id) === id)
-    if (!p) return update(key, { product_id: null })
+    if (!p) return update(key, { product_id: null, unit: null })
+    setProduct(key, p)
+  }
+  const setProduct = (key: string, p: Product) =>
     update(key, {
       product_id: p.id,
       name: p.name,
@@ -85,17 +103,21 @@ export function LineItemsEditor({
       unit: p.unit,
       unit_price: priceFor(p, priceBook) ?? 0,
     })
-  }
   const t = totals(lines, term)
-  const productOptions = products.filter((p) => p.active).map((p) => {
-    const price = priceFor(p, priceBook)
-    return { value: String(p.id), label: `${p.name} (${p.sku})${price === null ? ' · no list price' : ''}` }
-  })
+  const productOptions = [
+    { value: MULTIPLE, label: 'Multiple products · enter the total deal value' },
+    ...products
+      .filter((p) => p.active)
+      .map((p) => {
+        const price = priceFor(p, priceBook)
+        return { value: String(p.id), label: `${p.name} (${p.sku})${price === null ? ' · no list price' : ''}` }
+      }),
+  ]
 
   return (
     <Stack gap="xs">
-      <Table.ScrollContainer minWidth={readOnly ? 560 : 900}>
-        <Table verticalSpacing={6}>
+      <ScrollArea type="auto" offsetScrollbars>
+        <Table verticalSpacing={6} miw={readOnly ? 560 : 900}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={readOnly ? '40%' : '34%'}>Product</Table.Th>
@@ -117,21 +139,19 @@ export function LineItemsEditor({
                         {l.name}
                       </Text>
                     ) : (
-                    <Select
-                      placeholder="Choose a product or type a custom line below"
-                      data={productOptions}
-                      value={l.product_id ? String(l.product_id) : null}
-                      onChange={(v) => pickProduct(l.key, v)}
-                      searchable
-                      clearable
-                    />
+                      <ProductSelect
+                        options={productOptions}
+                        value={isDealTotal(l) ? MULTIPLE : l.product_id ? String(l.product_id) : null}
+                        onPick={(v, search) => pickProduct(l.key, v, search)}
+                        canCreate={isAdmin && !!brandId}
+                      />
                     )}
                     {!l.product_id && !readOnly && (
-                      <TextInput placeholder="Custom line name" value={l.name} onChange={(e) => update(l.key, { name: e.target.value })} disabled={readOnly} />
+                      <TextInput placeholder={isDealTotal(l) ? 'Which products? e.g. Multiple products: Hardware, Storage' : 'Custom line name'} value={l.name} onChange={(e) => update(l.key, { name: e.target.value })} disabled={readOnly} />
                     )}
                     <Group gap={4}>
                       <Badge size="xs" variant="light" color={l.billing_type === 'recurring' ? 'violet' : 'orange'}>
-                        {l.billing_type === 'recurring' ? 'per month' : 'one-time'}
+                        {isDealTotal(l) ? (l.billing_type === 'recurring' ? 'total · licences / subscription' : 'total · one-time') : l.billing_type === 'recurring' ? 'per month' : 'one-time'}
                       </Badge>
                       {l.unit && (
                         <Badge size="xs" variant="outline" color="gray">
@@ -151,13 +171,21 @@ export function LineItemsEditor({
                   </Stack>
                 </Table.Td>
                 <Table.Td>
-                  {readOnly ? <Text size="sm">{l.quantity.toLocaleString('en-US')}</Text> : <NumberInput min={0} decimalScale={2} value={l.quantity} onChange={(v) => update(l.key, { quantity: Number(v) || 0 })} w={90} thousandSeparator />}
+                  {isDealTotal(l) ? (
+                    <Text size="sm" c="dimmed">
+                      —
+                    </Text>
+                  ) : readOnly ? <Text size="sm">{l.quantity.toLocaleString('en-US')}</Text> : <NumberInput min={0} decimalScale={2} value={l.quantity} onChange={(v) => update(l.key, { quantity: Number(v) || 0 })} w={90} thousandSeparator />}
                 </Table.Td>
                 <Table.Td>
-                  {readOnly ? <Text size="sm">{money2(l.unit_price, currency)}</Text> : <NumberInput min={0} decimalScale={2} value={l.unit_price} onChange={(v) => update(l.key, { unit_price: Number(v) || 0 })} w={110} prefix={currency === 'EUR' ? '€' : currency === 'USD' ? '$' : `${currency} `} thousandSeparator />}
+                  {readOnly ? <Text size="sm">{isDealTotal(l) ? 'Total' : money2(l.unit_price, currency)}</Text> : <NumberInput min={0} decimalScale={2} value={l.unit_price} onChange={(v) => update(l.key, { unit_price: Number(v) || 0 })} w={isDealTotal(l) ? 140 : 110} aria-label={isDealTotal(l) ? 'Total deal value' : 'Unit price'} prefix={currency === 'EUR' ? '€' : currency === 'USD' ? '$' : `${currency} `} thousandSeparator />}
                 </Table.Td>
                 <Table.Td>
-                  {readOnly ? <Text size="sm">{l.discount_pct}%</Text> : <NumberInput min={0} max={100} decimalScale={2} value={l.discount_pct} onChange={(v) => update(l.key, { discount_pct: Number(v) || 0 })} w={80} suffix="%" />}
+                  {isDealTotal(l) ? (
+                    <Text size="sm" c="dimmed">
+                      —
+                    </Text>
+                  ) : readOnly ? <Text size="sm">{l.discount_pct}%</Text> : <NumberInput min={0} max={100} decimalScale={2} value={l.discount_pct} onChange={(v) => update(l.key, { discount_pct: Number(v) || 0 })} w={80} suffix="%" />}
                 </Table.Td>
                 <Table.Td>
                   {l.billing_type === 'recurring' && readOnly ? (
@@ -184,13 +212,24 @@ export function LineItemsEditor({
             ))}
           </Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </ScrollArea>
       {!readOnly && (
-        <Group>
+        <Group gap="xs">
           <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={add}>
             Add line
           </Button>
+          <Button variant="subtle" size="xs" leftSection={<IconStack2 size={14} />} onClick={addTotal}>
+            Multiple products (total only)
+          </Button>
         </Group>
+      )}
+      {brandId && (
+        <NewProductModal
+          name={newProduct?.name ?? null}
+          brandId={brandId}
+          onClose={() => setNewProduct(null)}
+          onCreated={(p) => newProduct && setProduct(newProduct.key, p)}
+        />
       )}
       <Paper withBorder p="sm" bg="var(--mantine-color-violet-light)">
         <SimpleGrid cols={{ base: 1, xs: 3 }}>
@@ -220,9 +259,102 @@ export function LineItemsEditor({
           </Stack>
         </SimpleGrid>
         <Text size="xs" c="dimmed" mt={6}>
-          Recurring lines: quantity × monthly unit price × term × (1 − discount). One-time lines: quantity × unit price × (1 − discount).
+          Recurring lines: quantity × monthly unit price × term × (1 − discount). One-time lines: quantity × unit price × (1 − discount). Multiple
+          products: the total you enter (a recurring one counts towards ARR over its term).
         </Text>
       </Paper>
     </Stack>
+  )
+}
+
+/** Product picker with "Multiple products" and, for admins, "add a new product" from what was typed. */
+function ProductSelect({
+  options,
+  value,
+  onPick,
+  canCreate,
+}: {
+  options: { value: string; label: string }[]
+  value: string | null
+  onPick: (v: string | null, search: string) => void
+  canCreate: boolean
+}) {
+  const [search, setSearch] = useState('')
+  const q = search.trim()
+  const selected = options.find((o) => o.value === value)
+  const typing = !!q && q !== selected?.label
+  const shown = typing ? options.filter((o) => o.value === MULTIPLE || o.label.toLowerCase().includes(q.toLowerCase())) : options
+  const exact = options.some((o) => o.label.toLowerCase().startsWith(`${q.toLowerCase()} (`))
+  const data = canCreate && typing && !exact ? [...shown, { value: NEW_PRODUCT, label: `+ Add "${q}" as a new product` }] : shown
+  return (
+    <Select
+      placeholder="Choose a product, Multiple products, or type a custom line below"
+      data={data}
+      value={value}
+      onChange={(v) => onPick(v, q)}
+      searchValue={search}
+      onSearchChange={setSearch}
+      filter={({ options }) => options}
+      searchable
+      clearable
+      nothingFoundMessage="No matching product"
+    />
+  )
+}
+
+function NewProductModal({ name, brandId, onClose, onCreated }: { name: string | null; brandId: number; onClose: () => void; onCreated: (p: Product) => void }) {
+  const [v, setV] = useState({ name: '', sku: '', unit: 'host', billing_type: 'recurring' })
+  const [shownFor, setShownFor] = useState<string | null>(null)
+  if (name !== shownFor) {
+    setShownFor(name)
+    if (name !== null)
+      setV({ name, sku: name.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40), unit: 'host', billing_type: 'recurring' })
+  }
+  const save = useApiMutation((body: typeof v) => api<Product>('/products', { method: 'POST', body: { ...body, brand_id: brandId } }), {
+    invalidate: [['products']],
+    success: 'Product created',
+    onSuccess: (p) => {
+      onCreated(p)
+      onClose()
+    },
+  })
+  return (
+    <Modal opened={name !== null} onClose={onClose} title="New product">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          save.mutate(v)
+        }}
+      >
+        <Stack>
+          <TextInput label="Name" required value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} data-autofocus />
+          <TextInput label="SKU" required maxLength={64} value={v.sku} onChange={(e) => setV({ ...v, sku: e.target.value })} />
+          <SimpleGrid cols={2}>
+            <Select
+              label="Billing"
+              data={[
+                { value: 'recurring', label: 'Recurring (per month)' },
+                { value: 'one_time', label: 'One-time' },
+              ]}
+              value={v.billing_type}
+              onChange={(x) => setV({ ...v, billing_type: x ?? 'recurring' })}
+              allowDeselect={false}
+            />
+            <Select label="Priced per" data={toOptions(UNITS)} value={v.unit} onChange={(x) => setV({ ...v, unit: x ?? 'host' })} allowDeselect={false} />
+          </SimpleGrid>
+          <Text size="xs" c="dimmed">
+            It has no list price yet: enter the unit price on this line, and add it to a price book under Products &amp; pricing.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={save.isPending}>
+              Create product
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+    </Modal>
   )
 }

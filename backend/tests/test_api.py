@@ -102,6 +102,24 @@ def test_missing_price_requires_manual_price(client, ref):
     assert r.status_code == 422
 
 
+def test_multiple_products_line_takes_a_total_value(client, ref):
+    acc = _account(client, "Lump Sum Corp")
+    r = client.post("/api/opportunities", json={
+        "title": "Several products", "account_id": acc["id"], "brand_id": ref["brands"]["SENTRY"], "term_months": 36,
+        "line_items": [{"name": "Multiple products", "quantity": 1, "unit_price": 90000, "unit": "deal_total",
+                        "billing_type": "recurring"}]})
+    assert r.status_code == 201, r.text
+    o = r.json()
+    assert (Decimal(o["amount_tcv"]), Decimal(o["amount_arr"])) == (Decimal("90000.00"), Decimal("30000.00"))
+    assert o["line_items"][0]["unit"] == "deal_total"
+    # only custom lines may carry it, and only this value
+    bad = client.post("/api/opportunities", json={"title": "x", "account_id": acc["id"],
+                                                  "brand_id": ref["brands"]["SENTRY"],
+                                                  "line_items": [{"name": "y", "quantity": 1, "unit_price": 1,
+                                                                  "unit": "host"}]})
+    assert bad.status_code == 422
+
+
 def test_price_preview(client, ref):
     r = client.post("/api/opportunities/price-preview", json={
         "term_months": 12, "price_book_id": ref["books"]["MetricsHub Direct USD"]["id"],

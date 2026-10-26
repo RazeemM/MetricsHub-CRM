@@ -169,6 +169,7 @@ export default function OpportunityEdit() {
       line_items: lines.map((l) => ({
         product_id: l.product_id,
         name: l.product_id ? undefined : l.name,
+        unit: l.product_id || l.unit !== 'deal_total' ? undefined : l.unit,
         quantity: l.quantity,
         unit_price: l.unit_price,
         discount_pct: l.discount_pct,
@@ -214,9 +215,10 @@ export default function OpportunityEdit() {
             </Grid.Col>
           </Grid>
           <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} mt="sm">
-            <AccountPicker label="Account" required value={f.account_id} initialLabel={existing?.account.name ?? presetAcc?.name} onChange={set('account_id')} />
+            <AccountPicker label="Account" required allowCreate value={f.account_id} initialLabel={existing?.account.name ?? presetAcc?.name} onChange={set('account_id')} />
             <ContactPicker
               label="Primary contact"
+              allowCreate
               value={f.primary_contact_id}
               accountId={f.account_id}
               initialLabel={existing?.primary_contact?.full_name ?? presetCt?.full_name}
@@ -257,6 +259,7 @@ export default function OpportunityEdit() {
             <AccountPicker
               label="Referring platform"
               types={['platform_partner']}
+              allowCreate
               value={f.referring_platform_id}
               initialLabel={existing?.referring_platform?.name}
               onChange={(v) => setF({ ...f, referring_platform_id: v, partner_contact_id: v ? f.partner_contact_id : null })}
@@ -266,6 +269,7 @@ export default function OpportunityEdit() {
               label="Platform account manager"
               accountId={f.referring_platform_id}
               roles={['platform_account_manager', 'partner_contact']}
+              allowCreate
               value={f.partner_contact_id}
               initialLabel={existing?.partner_contact?.full_name}
               onChange={set('partner_contact_id')}
@@ -273,7 +277,7 @@ export default function OpportunityEdit() {
             />
             <Select label="Route to market" data={toOptions(ROUTES)} value={f.route_to_market} onChange={(v) => set('route_to_market')(v ?? 'direct')} allowDeselect={false} />
             {f.route_to_market === 'reseller' && (
-              <AccountPicker label="Reseller" types={['reseller', 'msp', 'system_integrator']} value={f.reseller_id} initialLabel={existing?.reseller?.name} onChange={set('reseller_id')} />
+              <AccountPicker label="Reseller" types={['reseller', 'msp', 'system_integrator']} allowCreate value={f.reseller_id} initialLabel={existing?.reseller?.name} onChange={set('reseller_id')} />
             )}
           </SimpleGrid>
         </Card>
@@ -294,7 +298,7 @@ export default function OpportunityEdit() {
             <NumberInput label="Contract period (months)" min={1} max={120} value={f.term_months} onChange={(v) => set('term_months')(Number(v) || 12)} />
             <TextInput label="Contract end" value={contractEnd ?? ''} readOnly placeholder="Set a start date" />
           </SimpleGrid>
-          <LineItemsEditor lines={lines} onChange={setLines} products={products ?? []} priceBook={priceBook} term={f.term_months} currency={currency} />
+          <LineItemsEditor lines={lines} onChange={setLines} products={products ?? []} priceBook={priceBook} term={f.term_months} currency={currency} brandId={f.brand_id} />
         </Card>
 
         <Card withBorder>

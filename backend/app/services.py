@@ -126,7 +126,7 @@ def set_line_items(db: Session, opp: Opportunity, items: list[LineItemIn]) -> No
             position=pos,
             name=name,
             description=item.description,
-            unit=product.unit if product else None,
+            unit=product.unit if product else item.unit,
             billing_type=item.billing_type or (product.billing_type if product else "recurring"),
             quantity=item.quantity,
             unit_price=unit_price,

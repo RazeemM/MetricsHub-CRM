@@ -1,5 +1,5 @@
 import { BarChart } from '@mantine/charts'
-import { Alert, Anchor, Badge, Card, Group, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core'
+import { Alert, Anchor, Badge, Card, Group, NumberInput, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -55,8 +55,8 @@ function DataTable<T>({ rows, cols, initial, maxHeight = 560, empty = 'Nothing t
       </Text>
     )
   return (
-    <Table.ScrollContainer minWidth={760} mah={maxHeight}>
-      <Table fz="sm" verticalSpacing={6} stickyHeader highlightOnHover>
+    <ScrollArea.Autosize mah={maxHeight} type="auto" offsetScrollbars>
+      <Table miw={760} fz="sm" verticalSpacing={6} stickyHeader highlightOnHover>
         <Table.Thead>
           <Table.Tr>
             {cols.map((c) => (
@@ -84,7 +84,7 @@ function DataTable<T>({ rows, cols, initial, maxHeight = 560, empty = 'Nothing t
           ))}
         </Table.Tbody>
       </Table>
-    </Table.ScrollContainer>
+    </ScrollArea.Autosize>
   )
 }
 
