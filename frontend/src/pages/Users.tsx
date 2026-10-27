@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Group, Modal, PasswordInput, Select, Stack, Switch, Table, Text, TextInput } from '@mantine/core'
+import { Alert, Badge, Button, Card, Group, Modal, PasswordInput, Select, Stack, Switch, Table, Text, TextInput } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { IconPlus } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
@@ -65,7 +65,7 @@ function UserModal({ opened, onClose, user }: { opened: boolean; onClose: () => 
 
 export default function Users() {
   const { isAdmin } = useAuth()
-  const { data: users } = useUsers()
+  const { data: users, error } = useUsers()
   const { data: brands } = useBrands()
   const [opened, modal] = useDisclosure()
   const [editing, setEditing] = useState<User | null>(null)
@@ -87,6 +87,11 @@ export default function Users() {
           </Button>
         }
       />
+      {error && (
+        <Alert color="red" mb="md" title="Could not load the users">
+          {(error as Error).message}
+        </Alert>
+      )}
       <Card withBorder p={0}>
         <Table highlightOnHover>
           <Table.Thead>

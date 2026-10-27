@@ -1,6 +1,15 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ROLES = ("admin", "sales", "readonly")
+
+
+def normalize_role(value: str | None, fallback: str = "readonly") -> str:
+    """'Read-only', 'READ ONLY', 'Sales' ... -> a role the CRM knows; anything else -> fallback."""
+    key = "".join(ch for ch in (value or "").lower() if ch.isalpha())
+    return key if key in ROLES else fallback
 
 
 class Settings(BaseSettings):
@@ -29,7 +38,12 @@ class Settings(BaseSettings):
     oidc_button_label: str = "Sign in with Microsoft"
     # Comma-separated email domains allowed to auto-create an account on first SSO login (empty = invite only)
     oidc_auto_provision_domains: str = ""
-    oidc_default_role: str = "sales"
+    oidc_default_role: str = "sales"  # admin, sales or readonly ("Read-only" is accepted too)
+
+    @field_validator("oidc_default_role")
+    @classmethod
+    def known_role(cls, v: str) -> str:
+        return normalize_role(v)
 
     @property
     def sso_enabled(self) -> bool:

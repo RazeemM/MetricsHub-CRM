@@ -123,3 +123,10 @@ def test_issuer_without_https_is_explained(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "oidc_client_id", "crm-client")
     msg = _sso_error(client.get("/api/auth/sso/login", follow_redirects=False))
     assert msg.startswith("CRM_OIDC_ISSUER must start with https://")
+
+
+def test_default_role_spellings_are_normalized():
+    from app.config import Settings, normalize_role
+
+    assert [normalize_role(v) for v in ("Read-only", "READ ONLY", "Sales", "admin", "manager", "")] ==         ["readonly", "readonly", "sales", "admin", "readonly", "readonly"]
+    assert Settings(oidc_default_role="Read-only").oidc_default_role == "readonly"
