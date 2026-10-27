@@ -19,6 +19,7 @@ import {
   IconLayoutDashboard,
   IconLayoutKanban,
   IconBulb,
+  IconChartBar,
   IconListDetails,
   IconMail,
   IconMailCog,
@@ -26,9 +27,11 @@ import {
   IconMoon,
   IconPackage,
   IconSearch,
+  IconSpeakerphone,
   IconSun,
   IconTargetArrow,
   IconUsers,
+  IconUsersGroup,
   IconWorldWww,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
@@ -49,10 +52,14 @@ const NAV = [
   { to: '/contacts', label: 'Contacts', icon: IconAddressBook },
   { to: '/products', label: 'Products & pricing', icon: IconPackage },
   { to: '/quote-templates', label: 'Quote templates', icon: IconFileInvoice },
-  { to: '/email/campaigns', label: 'Campaigns', icon: IconMail },
+]
+
+const MARKETING = [
+  { to: '/marketing', label: 'Overview', icon: IconChartBar, exact: true },
+  { to: '/email/campaigns', label: 'Campaigns & newsletters', icon: IconMail },
+  { to: '/marketing/audiences', label: 'Audiences', icon: IconUsersGroup },
+  { to: '/email/lists', label: 'Lists', icon: IconListDetails },
   { to: '/email/templates', label: 'Email templates', icon: IconMailCog },
-  { to: '/email/lists', label: 'Mailing lists', icon: IconListDetails },
-  { to: '/import', label: 'Import / export', icon: IconFileImport },
 ]
 
 interface SearchResult {
@@ -117,10 +124,23 @@ export default function Layout() {
   const loc = useLocation()
   const nav = useNavigate()
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
-  const items = isAdmin
-    ? [...NAV, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }, { to: '/users', label: 'Users', icon: IconUsers }]
-    : NAV
-  const active = (to: string) => (to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to))
+  const marketing = isAdmin ? [...MARKETING, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }] : MARKETING
+  const tail = [{ to: '/import', label: 'Import / export', icon: IconFileImport }, ...(isAdmin ? [{ to: '/users', label: 'Users', icon: IconUsers }] : [])]
+  const active = (to: string, exact?: boolean) => (to === '/' || exact ? loc.pathname === to : loc.pathname.startsWith(to))
+  const inMarketing = marketing.some((it) => active(it.to, 'exact' in it && it.exact))
+  const link = (it: { to: string; label: string; icon: typeof IconMail; exact?: boolean }) => (
+    <NavLink
+      key={it.to}
+      label={it.label}
+      leftSection={<it.icon size={18} />}
+      active={active(it.to, it.exact)}
+      onClick={() => {
+        nav(it.to)
+        close()
+      }}
+      style={{ borderRadius: 8 }}
+    />
+  )
 
   return (
     <AppShell header={{ height: 56 }} navbar={{ width: 230, breakpoint: 'sm', collapsed: { mobile: !opened } }} padding="md">
@@ -161,20 +181,19 @@ export default function Layout() {
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Navbar p="xs">
-        {items.map((it) => (
-          <NavLink
-            key={it.to}
-            label={it.label}
-            leftSection={<it.icon size={18} />}
-            active={active(it.to)}
-            onClick={() => {
-              nav(it.to)
-              close()
-            }}
-            style={{ borderRadius: 8 }}
-          />
-        ))}
+      <AppShell.Navbar p="xs" style={{ overflowY: 'auto' }}>
+        {NAV.map(link)}
+        <NavLink
+          label="Marketing"
+          leftSection={<IconSpeakerphone size={18} />}
+          defaultOpened={inMarketing}
+          childrenOffset={14}
+          style={{ borderRadius: 8 }}
+          fw={inMarketing ? 600 : undefined}
+        >
+          {marketing.map(link)}
+        </NavLink>
+        {tail.map(link)}
       </AppShell.Navbar>
       <AppShell.Main>
         <Outlet />

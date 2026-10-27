@@ -91,16 +91,25 @@ Every quarter BMC sends the *Reseller Fee Report to Sentry Software* as a PDF an
 
 The reports are BMC-confidential: keep them out of this repository and out of shared folders.
 
-## Campaigns and newsletters
+## Marketing: campaigns, newsletters, audiences and lists
 
-*Campaigns*, *Email templates* and *Mailing lists* in the menu send bulk email through the CRM's own mail system.
+The **Marketing** section of the menu holds the *Overview*, *Campaigns & newsletters*, *Audiences*, *Lists*, *Email templates* and (for admins) *Website forms*. Bulk email goes through the CRM's own mail system.
+
+- **Overview:** how many contacts can be emailed or have consent, and over 30 days, 90 days or 12 months the emails delivered, open, click and unsubscribe rates, and the recent campaigns.
+- **Audiences:** saved filters on contacts that stay up to date. A campaign sent to an audience goes to whoever matches when sending starts.
+  - Rules: lifecycle, contact role, account type, country (the contact's or its account's), lead source, owner, brand, marketing consent, subscribed to a list, added in the last N days.
+  - Licence rules use the account's licences: *has an active licence*, *lapsed* (had some, none active), *never had one*, *holds an active licence for* a product, *a licence renews within N days*.
+  - The editor shows how many contacts match as you change the rules. *Save as a list* freezes today's matches into a static list, for example an event's invitees.
+- **On the Contacts page:** the *View* picker shows all contacts, a list's members or an audience's matches.
+  - Tick contacts and choose *Add to list* to add them to an existing list or a new one.
+  - With filters set, *Save as audience* turns them into an audience.
 
 - **Email templates:** reusable HTML designs per brand, started from a *Newsletter*, *Announcement* or *Blank* starter, or pasted/loaded from a designer's .html file, with a live desktop/mobile preview.
   - Merge fields: `{first_name}`, `{last_name}`, `{full_name}`, `{company}`, `{job_title}`, `{country}`, `{owner}`, `{email}`, `{postal_address}`, `{unsubscribe_url}`. A fallback is written `{first_name|there}`. Merged values are HTML-escaped.
 - **Mailing lists:** a *contact list* (leads in a region, event attendees...) or *newsletter subscribers*.
   - Fill a list by filter (lifecycle, role, account type, country, brand, consent), from contacts, or by CSV import (`email`, optional `first_name`, `last_name`, `company`). Unknown addresses become new leads.
   - When importing, tick *they agreed to receive marketing email* only if they really did: it is recorded on each contact.
-- **Campaigns:** pick a template (its content is copied into the campaign and can be adjusted), one or more lists, the from name and reply-to address.
+- **Campaigns:** pick a template (its content is copied into the campaign and can be adjusted), one or more lists and/or audiences, the from name and reply-to address.
   - **Send test** sends to up to 5 addresses with sample values.
   - **Send now** or **Schedule**. The recipients are fixed at that moment, and sending runs in the background at `CRM_BULK_RATE_PER_MINUTE`. It survives restarts and can be paused, resumed or cancelled. If the SMTP server cannot be reached, the campaign pauses with the error and nothing is lost.
   - The report shows sent, opened, clicked, unsubscribed, failed and skipped (with the reason) per recipient. Opens are approximate because mail apps block or pre-load images; clicks are reliable.

@@ -439,6 +439,19 @@ class ListMember(Base):
     contact: Mapped[Contact] = relationship()
 
 
+class Audience(TimestampMixin, Base):
+    """A dynamic audience (segment): the contacts matching its rules when it is used. See app.audiences."""
+
+    __tablename__ = "audiences"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="SET NULL"))
+    rules: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    brand: Mapped[Brand | None] = relationship()
+
+
 class EmailTemplate(TimestampMixin, Base):
     """Reusable HTML email with merge fields ({first_name}, {company}...), used by campaigns and newsletters."""
 
@@ -468,6 +481,7 @@ class Campaign(TimestampMixin, Base):
     from_name: Mapped[str | None] = mapped_column(String(120))
     reply_to: Mapped[str | None] = mapped_column(String(255))
     list_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    audience_ids: Mapped[list] = mapped_column(JSONB, default=list)  # dynamic audiences, resolved when sending starts
     require_consent: Mapped[bool] = mapped_column(Boolean, default=False)
     track_opens: Mapped[bool] = mapped_column(Boolean, default=True)
     track_clicks: Mapped[bool] = mapped_column(Boolean, default=True)

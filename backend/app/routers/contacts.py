@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from .. import audiences
 from ..crud import apply_changes, audit, get_or_404, paginate
 from ..db import get_db
-from ..models import Account, Contact, User
+from ..models import Account, Audience, Contact, ListMember, User
 from ..schemas import ContactCreate, ContactOut, ContactUpdate, Page
 from ..security import get_current_user, require_writer
 from ..services import find_contact_by_email
@@ -18,7 +19,7 @@ SORTS = {"name": Contact.last_name, "email": Contact.email, "created_at": Contac
 
 
 def build_query(q=None, account_id=None, lifecycle=None, role=None, source=None, brand_id=None, owner_id=None,
-                account_type=None):
+                account_type=None, list_id=None, audience=None):
     stmt = select(Contact).options(selectinload(Contact.account), selectinload(Contact.owner))
     if q:
         term = f"%{q.strip()}%"
@@ -40,6 +41,10 @@ def build_query(q=None, account_id=None, lifecycle=None, role=None, source=None,
         stmt = stmt.where(Contact.owner_id == owner_id)
     if account_type:
         stmt = stmt.where(Contact.account.has(Account.account_type.in_(account_type)))
+    if list_id:
+        stmt = stmt.where(Contact.id.in_(select(ListMember.contact_id).where(ListMember.list_id == list_id)))
+    if audience is not None:
+        stmt = stmt.where(audiences.condition(audience.rules))
     return stmt
 
 
@@ -53,6 +58,8 @@ def list_contacts(
     account_type: list[str] | None = Query(None),
     brand_id: int | None = None,
     owner_id: int | None = None,
+    list_id: int | None = None,
+    audience_id: int | None = None,
     sort: str = "created_at",
     desc: bool = True,
     page: int = Query(1, ge=1),
@@ -61,7 +68,8 @@ def list_contacts(
     _: User = Depends(get_current_user),
 ):
     col = SORTS.get(sort, Contact.created_at)
-    stmt = build_query(q, account_id, lifecycle, role, source, brand_id, owner_id, account_type)
+    audience = get_or_404(db, Audience, audience_id) if audience_id else None
+    stmt = build_query(q, account_id, lifecycle, role, source, brand_id, owner_id, account_type, list_id, audience)
     stmt = stmt.order_by(col.desc().nulls_last() if desc else col.asc().nulls_last(), Contact.id)
     items, total = paginate(db, stmt, page, page_size)
     return Page(items=items, total=total, page=page, page_size=page_size)

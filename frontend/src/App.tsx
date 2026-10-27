@@ -13,6 +13,7 @@ import EmailTemplates, { EmailTemplateEdit } from './pages/EmailTemplates'
 import ImportPage from './pages/Import'
 import Insights from './pages/Insights'
 import Login, { SsoCallback } from './pages/Login'
+import MarketingOverview, { AudienceDetail, Audiences } from './pages/Marketing'
 import MailingLists, { MailingListDetail } from './pages/MailingLists'
 import OpportunityDetail from './pages/OpportunityDetail'
 import OpportunityEdit from './pages/OpportunityEdit'
@@ -61,6 +62,9 @@ export default function App() {
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/products" element={<Products />} />
         <Route path="/quote-templates" element={<QuoteTemplates />} />
+        <Route path="/marketing" element={<MarketingOverview />} />
+        <Route path="/marketing/audiences" element={<Audiences />} />
+        <Route path="/marketing/audiences/:id" element={<AudienceDetail />} />
         <Route path="/email/campaigns" element={<Campaigns />} />
         <Route path="/email/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/email/templates" element={<EmailTemplates />} />

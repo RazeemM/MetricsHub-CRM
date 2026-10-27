@@ -23,7 +23,7 @@ import { modals } from '@mantine/modals'
 import { IconCalendar, IconPlayerPause, IconPlayerPlay, IconPlus, IconSend, IconTestPipe, IconX } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, Pager } from '../components/common'
@@ -32,6 +32,7 @@ import { useApiMutation, useBrands } from '../hooks'
 import { fmtDate } from '../labels'
 import { useEmailTemplates } from './EmailTemplates'
 import { useLists } from './MailingLists'
+import { useAudiences } from './Marketing'
 
 interface Stats {
   queued: number
@@ -57,6 +58,7 @@ interface Campaign {
   from_name: string | null
   reply_to: string | null
   list_ids: number[]
+  audience_ids: number[]
   require_consent: boolean
   track_opens: boolean
   track_clicks: boolean
@@ -86,13 +88,16 @@ export default function Campaigns() {
   const { data } = useQuery({ queryKey: ['campaigns'], queryFn: () => api<Campaign[]>('/campaigns'), refetchInterval: 15_000 })
   const { data: templates } = useEmailTemplates()
   const { data: lists } = useLists()
-  const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', kind: 'campaign', template_id: null as string | null, list_ids: [] as string[] })
+  const { data: audiences } = useAudiences()
+  // "Email this audience" (on an audience's page) opens this form with the audience chosen
+  const fromAudience = (useLocation().state as { audienceId?: number } | null)?.audienceId
+  const [open, setOpen] = useState(!!fromAudience)
+  const [form, setForm] = useState({ name: '', kind: 'campaign', template_id: null as string | null, list_ids: [] as string[], audience_ids: fromAudience ? [String(fromAudience)] : ([] as string[]) })
   const create = useApiMutation(
     () =>
       api<Campaign>('/campaigns', {
         method: 'POST',
-        body: { name: form.name, kind: form.kind, template_id: form.template_id ? Number(form.template_id) : null, list_ids: form.list_ids.map(Number) },
+        body: { name: form.name, kind: form.kind, template_id: form.template_id ? Number(form.template_id) : null, list_ids: form.list_ids.map(Number), audience_ids: form.audience_ids.map(Number) },
       }),
     { invalidate: [['campaigns']], onSuccess: (c) => nav(`/email/campaigns/${c.id}`) },
   )
@@ -171,6 +176,13 @@ export default function Campaigns() {
           />
           <Select label="Template" placeholder="Start from a template" clearable data={(templates ?? []).map((t) => ({ value: String(t.id), label: t.name }))} value={form.template_id} onChange={(v) => setForm({ ...form, template_id: v })} />
           <MultiSelect label="Send to lists" data={(lists ?? []).map((l) => ({ value: String(l.id), label: `${l.name} (${l.subscribed})` }))} value={form.list_ids} onChange={(v) => setForm({ ...form, list_ids: v })} />
+          <MultiSelect
+            label="And/or to audiences"
+            description="Saved filters: whoever matches when sending starts"
+            data={(audiences ?? []).map((a) => ({ value: String(a.id), label: `${a.name} (${a.counts?.reachable ?? 0})` }))}
+            value={form.audience_ids}
+            onChange={(v) => setForm({ ...form, audience_ids: v })}
+          />
           <Group justify="flex-end">
             <Button loading={create.isPending} disabled={!form.name.trim()} onClick={() => create.mutate(undefined)}>
               Create
@@ -293,6 +305,7 @@ export function CampaignDetail() {
   const { canWrite, user } = useAuth()
   const { data: settings } = useMailSettings()
   const { data: lists } = useLists()
+  const { data: audiences } = useAudiences()
   const { data: brands } = useBrands()
   const key = ['campaign', id]
   const { data: c } = useQuery({
@@ -306,14 +319,14 @@ export function CampaignDetail() {
   }, [c])
   const dirty = !!draft && !!c && JSON.stringify(draft) !== JSON.stringify(c)
   const { data: aud } = useQuery({
-    queryKey: ['campaign-audience', id, c?.list_ids, c?.require_consent],
+    queryKey: ['campaign-audience', id, c?.list_ids, c?.audience_ids, c?.require_consent],
     queryFn: () => api<{ recipients: number; skipped: number; skipped_by_reason: Record<string, number> }>(`/campaigns/${id}/audience`),
     enabled: !!c && editable(c),
   })
   const save = useApiMutation(
     () => {
-      const { name, kind, brand_id, template_id, subject, preheader, body_html, from_name, reply_to, list_ids, require_consent, track_opens, track_clicks } = draft!
-      return api<Campaign>(`/campaigns/${id}`, { method: 'PUT', body: { name, kind, brand_id, template_id, subject, preheader, body_html, from_name: from_name || null, reply_to: reply_to || null, list_ids, require_consent, track_opens, track_clicks } })
+      const { name, kind, brand_id, template_id, subject, preheader, body_html, from_name, reply_to, list_ids, audience_ids, require_consent, track_opens, track_clicks } = draft!
+      return api<Campaign>(`/campaigns/${id}`, { method: 'PUT', body: { name, kind, brand_id, template_id, subject, preheader, body_html, from_name: from_name || null, reply_to: reply_to || null, list_ids, audience_ids, require_consent, track_opens, track_clicks } })
     },
     { invalidate: [key, ['campaigns'], ['campaign-audience', id]], success: 'Saved' },
   )
@@ -444,6 +457,14 @@ export function CampaignDetail() {
                 data={(lists ?? []).map((l) => ({ value: String(l.id), label: `${l.name} (${l.subscribed})` }))}
                 value={draft.list_ids.map(String)}
                 onChange={(v) => setDraft({ ...draft, list_ids: v.map(Number) })}
+                readOnly={!edit}
+              />
+              <MultiSelect
+                label="Audiences"
+                description="Resolved when sending starts"
+                data={(audiences ?? []).map((a) => ({ value: String(a.id), label: `${a.name} (${a.counts?.reachable ?? 0})` }))}
+                value={(draft.audience_ids ?? []).map(String)}
+                onChange={(v) => setDraft({ ...draft, audience_ids: v.map(Number) })}
                 readOnly={!edit}
               />
               <Select label="Brand" placeholder="Any" clearable data={(brands ?? []).map((b) => ({ value: String(b.id), label: b.name }))} value={draft.brand_id ? String(draft.brand_id) : null} onChange={(v) => setDraft({ ...draft, brand_id: v ? Number(v) : null })} disabled={!edit} />

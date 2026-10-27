@@ -348,6 +348,7 @@ class CampaignIn(BaseModel):
     from_name: str | None = Field(default=None, max_length=120)
     reply_to: EmailStr | None = None
     list_ids: list[int] = Field(default_factory=list)
+    audience_ids: list[int] = Field(default_factory=list)
     require_consent: bool = False
     track_opens: bool = True
     track_clicks: bool = True
@@ -464,14 +465,14 @@ def send_campaign(cid: int, data: SendIn, db: Session = Depends(get_db), user: U
     """Send now (queued, delivered in the background) or schedule for later."""
     c = get_or_404(db, Campaign, cid)
     _editable(c)
-    if not c.subject or not c.body_html or not c.list_ids:
-        raise HTTPException(422, "A campaign needs a subject, content and at least one list")
+    if not c.subject or not c.body_html or not (c.list_ids or c.audience_ids):
+        raise HTTPException(422, "A campaign needs a subject, content and at least one list or audience")
     if not mail.status("bulk")["enabled"]:
         raise HTTPException(503, "Bulk email is not configured on this server (CRM_BULK_MAIL_BACKEND / SMTP)")
     if not get_settings().mail_from:
         raise HTTPException(503, "Set CRM_MAIL_FROM: campaigns are sent from that address")
     if cmp.audience_summary(db, c)["recipients"] == 0:
-        raise HTTPException(422, "Nobody in the chosen lists can receive this campaign")
+        raise HTTPException(422, "Nobody in the chosen lists or audiences can receive this campaign")
     if data.scheduled_at and data.scheduled_at > dt.datetime.now(dt.UTC):
         c.status, c.scheduled_at = "scheduled", data.scheduled_at
     else:

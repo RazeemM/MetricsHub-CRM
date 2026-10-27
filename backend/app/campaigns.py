@@ -17,9 +17,9 @@ from urllib.parse import quote
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import mail
+from . import audiences, mail
 from .config import get_settings
-from .models import Account, Activity, Campaign, CampaignRecipient, Contact, ListMember, MailingList, User
+from .models import Account, Activity, Audience, Campaign, CampaignRecipient, Contact, ListMember, MailingList, User
 
 MERGE = re.compile(r"\{([a-z_]+)(?:\|([^{}]*))?\}")
 MERGE_FIELDS = {
@@ -124,19 +124,25 @@ def build_message(c: Campaign, email: str, values: dict, token: str, track: bool
 
 # ---------------------------------------------------------------- audience
 def audience(db: Session, c: Campaign) -> tuple[list[tuple[Contact, str]], list[tuple[Contact | None, str, str]]]:
-    """(contacts to send to, skipped (contact, email, reason)). One email per address, across all chosen lists."""
+    """(contacts to send to, skipped (contact, email, reason)). One email per address, across all chosen lists
+    and audiences. An audience's contacts are those matching its rules now."""
     lists = {ml.id: ml for ml in db.scalars(select(MailingList).where(MailingList.id.in_(c.list_ids or [])))}
     members = db.scalars(select(ListMember).options(
         selectinload(ListMember.contact).selectinload(Contact.account),
         selectinload(ListMember.contact).selectinload(Contact.owner))
         .where(ListMember.list_id.in_(list(lists)))).all()
     newsletter_ok = {m.contact_id for m in members if m.status == "subscribed" and lists[m.list_id].kind == "newsletter"}
+    candidates = [(m.contact, m.status) for m in members]
+    rules = [a.rules for a in db.scalars(select(Audience).where(Audience.id.in_(c.audience_ids or [])))]
+    if rules:
+        ids = set().union(*(audiences.contact_ids(db, r) for r in rules))
+        candidates += [(ct, "subscribed") for ct in db.scalars(select(Contact).options(
+            selectinload(Contact.account), selectinload(Contact.owner)).where(Contact.id.in_(ids)))]
     send: dict[str, Contact] = {}
     skipped: dict[int, tuple[Contact | None, str, str]] = {}
-    for m in sorted(members, key=lambda m: m.contact_id):
-        ct = m.contact
-        if m.status != "subscribed":
-            skipped.setdefault(ct.id, (ct, ct.email or "", "subscription not confirmed yet" if m.status == "pending"
+    for ct, status in sorted(candidates, key=lambda x: x[0].id):
+        if status != "subscribed":
+            skipped.setdefault(ct.id, (ct, ct.email or "", "subscription not confirmed yet" if status == "pending"
                                        else "unsubscribed from the list"))
             continue
         email = (ct.email or "").strip().lower()
