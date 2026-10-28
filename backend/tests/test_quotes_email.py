@@ -99,7 +99,7 @@ def test_graph_refusal_is_reported_and_nothing_changes(client, ref, graph):
     opp, q = _quote(client, ref, 32)
     graph["status"] = 403
     r = client.post(f"/api/quotes/{q['id']}/email", json={"to": ["mia32@mailco.example"], "subject": "S", "body": "B"})
-    assert r.status_code == 502 and "Mail.Send" in r.json()["detail"]
+    assert r.status_code == 422 and "Mail.Send" in r.json()["detail"]
     assert client.get(f"/api/opportunities/{opp['id']}/quotes").json()[0]["status"] == "draft"
     assert client.get("/api/activities", params={"opportunity_id": opp["id"]}).json()["total"] == 0
 

@@ -84,7 +84,7 @@ async def send_email(
     try:
         mail.send(msg)
     except mail.MailError as exc:
-        raise HTTPException(502, str(exc)) from None
+        raise mail.http_error(exc) from None
 
     names = ", ".join(a.name for a in attachments)
     db.add(Activity(

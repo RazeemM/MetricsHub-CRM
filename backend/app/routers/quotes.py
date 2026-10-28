@@ -312,7 +312,7 @@ def email_quote(quote_id: int, data: EmailIn, db: Session = Depends(get_db), use
     try:
         mail.send(msg)
     except mail.MailError as exc:
-        raise HTTPException(502, str(exc)) from None
+        raise mail.http_error(exc) from None
 
     opp = db.get(Opportunity, q.opportunity_id)
     contact_id = opp.primary_contact_id if opp else None

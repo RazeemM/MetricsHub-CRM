@@ -58,7 +58,7 @@ def mail_test(data: TestMailIn, user: User = Depends(require_admin)):
                                subject="CRM test email", html="<p>The CRM can send email through this server.</p>"),
                   data.purpose)
     except mail.MailError as exc:
-        raise HTTPException(502, str(exc)) from None
+        raise mail.http_error(exc) from None
     return {"sent": True, "backend": mail.backend_for(data.purpose)}
 
 
@@ -460,7 +460,7 @@ def test_send(cid: int, data: TestSendIn, db: Session = Depends(get_db), user: U
                 msg.subject = f"[TEST] {msg.subject}"
                 session.send(msg)
     except mail.MailError as exc:
-        raise HTTPException(502, str(exc)) from None
+        raise mail.http_error(exc) from None
     return {"sent": len(data.to)}
 
 

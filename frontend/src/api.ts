@@ -78,9 +78,9 @@ export async function api<T = unknown>(
     try {
       detail = (await res.json()).detail
     } catch {
-      detail = res.statusText
+      detail = undefined // not JSON: e.g. a proxy's error page
     }
-    throw new ApiError(res.status, errorMessage(detail), detail)
+    throw new ApiError(res.status, detail ? errorMessage(detail) : `Request failed (HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''})`, detail)
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>

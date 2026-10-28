@@ -26,9 +26,14 @@ from email import policy as email_policy
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 
+import logging
+
 import httpx
+from fastapi import HTTPException
 
 from .config import get_settings
+
+log = logging.getLogger("crm.mail")
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 MAX_ATTACHMENTS_BYTES = 3_000_000  # Graph limit for attachments sent inline with sendMail
@@ -36,6 +41,13 @@ MAX_ATTACHMENTS_BYTES = 3_000_000  # Graph limit for attachments sent inline wit
 
 class MailError(Exception):
     pass
+
+
+def http_error(exc: MailError, what: str = "send") -> HTTPException:
+    """A mail server's refusal as an API error. It is logged (docker compose logs api), and returned as 422, not
+    5xx: reverse proxies (IIS/ARR, nginx error pages) often replace 5xx bodies, which hides the reason."""
+    log.warning("Could not %s email: %s", what, exc)
+    return HTTPException(422, f"Could not send the email. {exc}")
 
 
 @dataclass

@@ -202,8 +202,10 @@ def send_batch(db: Session, c: Campaign, limit: int) -> int:
                     session.send(build_message(c, r.email, contact_values(ct), r.token))
                     r.status, r.sent_at = "sent", dt.datetime.now(dt.UTC)
                 except mail.MailError as exc:
+                    mail.log.warning("Campaign %s: could not send to %s: %s", c.id, r.email, exc)
                     r.status, r.reason = "failed", str(exc)[:255]
     except mail.MailError as exc:  # could not connect at all: pause, keep the queue
+        mail.log.warning("Campaign %s paused: %s", c.id, exc)
         db.rollback()
         c = db.get(Campaign, c.id)
         c.status, c.last_error = "paused", str(exc)[:500]
