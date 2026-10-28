@@ -1,7 +1,7 @@
 """Email marketing: templates, mailing lists, campaigns/newsletters, and the mail server status."""
-import csv
 import datetime as dt
-import io
+import re
+import unicodedata
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, EmailStr, Field
@@ -26,6 +26,7 @@ from ..models import (
     User,
 )
 from ..security import get_current_user, require_admin, require_writer
+from .imports import read_table
 
 router = APIRouter(prefix="/api", tags=["email"])
 
@@ -271,26 +272,33 @@ def add_members(lid: int, data: AddMembersIn, db: Session = Depends(get_db), use
     return {"added": added, "already_in_list": len(ids) - added}
 
 
+LIST_COLUMNS = {  # normalised header → field
+    "e_mail": "email", "email_address": "email", "e_mail_address": "email", "mail": "email", "courriel": "email",
+    "firstname": "first_name", "given_name": "first_name", "prenom": "first_name",
+    "lastname": "last_name", "surname": "last_name", "family_name": "last_name", "nom": "last_name",
+    "account": "company", "account_name": "company", "company_name": "company", "organization": "company",
+    "organisation": "company", "societe": "company",
+}
+
+
+def _column(header: str) -> str:
+    """'First Name' → first_name, 'E-mail' → e_mail, 'Prénom' → prenom."""
+    h = unicodedata.normalize("NFKD", header or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "_", h.lower()).strip("_")
+
+
 @router.post("/lists/{lid}/import")
 def import_members(lid: int, file: UploadFile = File(...), consent: bool = Form(False),
                    db: Session = Depends(get_db), user: User = Depends(require_writer)):
-    """CSV with an email column (first_name, last_name, company optional). Unknown emails become new contacts.
-    consent=true records that these people agreed to receive marketing email."""
+    """Excel (.xlsx) or CSV with an email column (first name, last name, company optional; headers in any common
+    spelling). Unknown emails become new contacts. consent=true records that these people agreed to receive
+    marketing email."""
     get_or_404(db, MailingList, lid)
-    raw = file.file.read(10_000_001)
-    if len(raw) > 10_000_000:
-        raise HTTPException(413, "File too large (max 10 MB)")
-    text = raw.decode("utf-8-sig", errors="replace")
-    try:
-        dialect = csv.Sniffer().sniff(text[:5000], delimiters=",;\t").delimiter
-    except csv.Error:
-        dialect = ","
-    rows = list(csv.DictReader(io.StringIO(text, newline=""), delimiter=dialect))
-    norm = lambda k: (k or "").strip().lower().replace(" ", "_")  # noqa: E731
+    _, rows = read_table(file)
     created, ids, bad = 0, set(), 0
     for row in rows:
-        r = {norm(k): (v or "").strip() for k, v in row.items()}
-        email = (r.get("email") or r.get("e-mail") or r.get("email_address") or "").lower()
+        r = {LIST_COLUMNS.get(_column(k), _column(k)): (v or "").strip() for k, v in row.items()}
+        email = r.get("email", "").lower()
         if "@" not in email or len(email) > 255:
             bad += 1
             continue

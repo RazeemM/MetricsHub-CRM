@@ -129,3 +129,28 @@ def test_add_contacts_to_a_list_and_save_an_audience_as_a_list(client):
     _contact(client, "Cy", "cy@bulk.example", country="Ruritania")
     assert client.get(f"/api/lists/{saved['id']}/members").json()["total"] == 2  # a list does not grow by itself
     assert client.get(f"/api/audiences/{aud['id']}").json()["counts"]["matching"] == 3
+
+
+def test_import_a_list_from_excel(client):
+    """An .xlsx with 'First Name', 'Last Name', 'Company', 'Email' headers (it used to fail with a 500)."""
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.append(["First Name", "Last Name", "Company", "Email"])
+    wb.active.append(["Xavier", "Excel", "Spreadsheet Co", "Xavier.Excel@sheets.example"])
+    wb.active.append(["No", "Address", "Nowhere", None])
+    out = io.BytesIO()
+    wb.save(out)
+    lst = client.post("/api/lists", json={"name": "From Excel"}).json()
+    r = client.post(f"/api/lists/{lst['id']}/import", files={"file": ("TestList.xlsx", out.getvalue())}).json()
+    assert r == {"rows": 2, "added": 1, "new_contacts": 1, "invalid_rows": 1}
+    c = client.get("/api/contacts", params={"q": "xavier.excel@sheets.example"}).json()["items"][0]
+    assert (c["first_name"], c["last_name"]) == ("Xavier", "Excel")
+
+    csv_data = "Prénom;Nom;E-mail\nYves;Point;yves@sheets.example\n"  # French headers, semicolons
+    r = client.post(f"/api/lists/{lst['id']}/import", files={"file": ("l.csv", csv_data.encode(), "text/csv")}).json()
+    assert r["added"] == 1 and r["new_contacts"] == 1
+    bad = client.post(f"/api/lists/{lst['id']}/import", files={"file": ("x.xlsx", b"not a workbook")})
+    assert bad.status_code == 422

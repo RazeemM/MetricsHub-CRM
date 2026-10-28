@@ -228,12 +228,12 @@ function ImportCsv({ listId, onClose }: { listId: number; onClose: () => void })
     },
   )
   return (
-    <Modal opened onClose={onClose} title="Import a CSV">
+    <Modal opened onClose={onClose} title="Import from Excel or CSV">
       <Stack>
         <Text size="sm">
-          A CSV with an <b>email</b> column; <b>first_name</b>, <b>last_name</b> and <b>company</b> are optional. People not yet in the CRM are created as leads.
+          An Excel (.xlsx) or CSV file with an <b>Email</b> column; <b>First name</b>, <b>Last name</b> and <b>Company</b> are optional. People not yet in the CRM are created as leads.
         </Text>
-        <FileButton onChange={setFile} accept=".csv,text/csv">
+        <FileButton onChange={setFile} accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
           {(props) => (
             <Button {...props} variant="default" leftSection={<IconUpload size={16} />}>
               {file ? file.name : 'Choose file'}
@@ -287,7 +287,7 @@ export function MailingListDetail() {
                 Add by filter
               </Button>
               <Button variant="light" leftSection={<IconUpload size={16} />} onClick={() => setModal('csv')}>
-                Import CSV
+                Import Excel / CSV
               </Button>
               <Menu position="bottom-end">
                 <Menu.Target>
@@ -398,7 +398,7 @@ export function MailingListDetail() {
         </Table.ScrollContainer>
         {data && !data.items.length && (
           <Text size="sm" c="dimmed">
-            No members{q || status ? ' match' : ' yet: add contacts by filter or import a CSV'}.
+            No members{q || status ? ' match' : ' yet: add contacts by filter or import an Excel or CSV file'}.
           </Text>
         )}
         {data && <Pager page={page} total={data.total} pageSize={50} onChange={setPage} />}
