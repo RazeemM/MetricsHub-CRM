@@ -167,6 +167,7 @@ class ContactOut(ORM, ContactBase):
     email: str | None = None
     source: str | None = None
     full_name: str = ""
+    previous_emails: list[str] = []
     account: Ref | None = None
     owner: UserRef | None = None
     consent_at: dt.datetime | None = None

@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, UserPicker } from '../components/common'
+import { BmcHelixReconciliation } from '../components/BmcHelixReconciliation'
 import { FreshsalesMigration } from '../components/FreshsalesMigration'
 import { MzdImport } from '../components/Licences'
 import { useBrands } from '../hooks'
@@ -151,6 +152,7 @@ export default function ImportPage() {
       />
       {isAdmin && <MzdImport />}
       {isAdmin && <FreshsalesMigration />}
+      {isAdmin && <BmcHelixReconciliation />}
       {canWrite && (
         <Card withBorder mb="md">
           <Stepper active={step} size="sm" mb="lg">

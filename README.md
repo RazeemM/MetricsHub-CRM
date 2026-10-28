@@ -226,6 +226,24 @@ curl -i https://crm.metricshub.com/api/public/forms/quote-request -H 'Content-Ty
 
 The form address and the confirmation link use `CRM_APP_URL`, which must be the CRM's public HTTPS address.
 
+## BMC → BMC Helix contact addresses
+
+Many BMC people moved from @bmc.com to a BMC Helix address. Admins upload the reconciliation workbook (`rapprochement_bmc_helix_historique.xlsx`) under *Import / export → BMC → BMC Helix contact addresses*.
+
+Always run a **Dry run** first: it lists every change without writing anything.
+
+| Sheet | What happens |
+|---|---|
+| *Correspondances* (probable match) | The contact with the @bmc.com address takes the Helix address. If both addresses exist as separate contacts, they are merged into the Helix one, keeping timeline, deals, list memberships, campaign history and form submissions. If neither exists, the contact is created. |
+| *Non trouvés* | Missing contacts are created with their @bmc.com address. Nothing is deduced. |
+| *Déjà Helix* | Missing contacts are created. |
+| *Ambigus* | Never applied, only listed. |
+
+- Existing contacts only get blank fields filled: name, and an account when the workbook's account exists in the CRM. BMC, BMC Software and BMC Helix map to the BMC platform account. Other account names are never created.
+- The old address is kept as a *previous address*. It shows on the contact page, and searching for it finds the contact.
+- The workbook's evidence (status, proof, date seen, original ID) is stored on the contact, and moves and merges are noted on its timeline.
+- Untick *Move contacts to the probable Helix address* to apply only the creations. Running the same workbook again changes nothing more.
+
 ## Migrating from Freshsales
 
 The migration reads accounts, contacts and deals from Freshsales and is safe to run more than once. Each migrated record stores its Freshsales id, so a second run updates records instead of duplicating them.

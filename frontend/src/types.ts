@@ -54,6 +54,7 @@ export interface Contact {
   last_name: string | null
   full_name: string
   email: string | null
+  previous_emails?: string[]
   phone: string | null
   mobile: string | null
   job_title: string | null

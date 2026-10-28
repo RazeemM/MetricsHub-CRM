@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 
 from .models import (
     Account,
+    Activity,
     Brand,
+    CampaignRecipient,
     Contact,
+    FormSubmission,
+    ListMember,
     LineItem,
     Opportunity,
     Pipeline,
@@ -50,6 +54,58 @@ def find_contact_by_email(db: Session, email: str | None) -> Contact | None:
     if not email:
         return None
     return db.scalar(select(Contact).where(func.lower(Contact.email) == email.strip().lower()))
+
+
+MERGE_FIELDS = ("first_name", "last_name", "phone", "mobile", "job_title", "account_id", "source", "brand_id",
+                "owner_id", "country", "linkedin", "consent_at")
+
+
+def merge_contacts(db: Session, keep: Contact, drop: Contact) -> None:
+    """Merge `drop` into `keep` and delete it: its timeline, deals, list memberships, campaign history and form
+    submissions move over, and blank fields of `keep` are filled from `drop`. `keep`'s email address stays;
+    `drop`'s is remembered in extra.previous_emails."""
+    if keep.id == drop.id:
+        return
+    for f in MERGE_FIELDS:
+        if getattr(keep, f) in (None, "") and getattr(drop, f) not in (None, ""):
+            setattr(keep, f, getattr(drop, f))
+    keep.consent_marketing = keep.consent_marketing or drop.consent_marketing
+    keep.unsubscribed = keep.unsubscribed or drop.unsubscribed  # an opt-out always wins
+    keep.notes = "\n\n".join(n for n in (keep.notes, drop.notes) if n) or None
+    extra = {**(drop.extra or {}), **(keep.extra or {})}
+    prev = list(dict.fromkeys([*(keep.extra or {}).get("previous_emails", []), *(drop.extra or {}).get(
+        "previous_emails", []), *([drop.email.lower()] if drop.email else [])]))
+    if prev:
+        extra["previous_emails"] = [e for e in prev if e != (keep.email or "").lower()]
+    keep.extra = extra
+    if not keep.external_id and drop.external_id:  # unique together: free it on drop first
+        ref = (drop.external_source, drop.external_id)
+        drop.external_source = drop.external_id = None
+        db.flush()
+        keep.external_source, keep.external_id = ref
+    db.query(Activity).filter(Activity.contact_id == drop.id).update({"contact_id": keep.id})
+    db.query(Opportunity).filter(Opportunity.primary_contact_id == drop.id).update({"primary_contact_id": keep.id})
+    db.query(Opportunity).filter(Opportunity.partner_contact_id == drop.id).update({"partner_contact_id": keep.id})
+    db.query(FormSubmission).filter(FormSubmission.contact_id == drop.id).update({"contact_id": keep.id})
+    # memberships and campaign rows are unique per contact: move those keep doesn't already have
+    lists = set(db.scalars(select(ListMember.list_id).where(ListMember.contact_id == keep.id)))
+    for m in db.scalars(select(ListMember).where(ListMember.contact_id == drop.id)).all():
+        if m.list_id in lists:
+            if m.status == "unsubscribed":  # the person opted out of this list under the other address
+                db.query(ListMember).filter(ListMember.list_id == m.list_id, ListMember.contact_id == keep.id).update(
+                    {"status": "unsubscribed", "unsubscribed_at": m.unsubscribed_at})
+            db.delete(m)
+        else:
+            m.contact_id = keep.id
+    sent = set(db.scalars(select(CampaignRecipient.campaign_id).where(CampaignRecipient.contact_id == keep.id)))
+    for r in db.scalars(select(CampaignRecipient).where(CampaignRecipient.contact_id == drop.id)).all():
+        if r.campaign_id in sent:
+            r.contact_id = None  # keeps the campaign report's counts
+        else:
+            r.contact_id = keep.id
+    db.flush()
+    db.delete(drop)
+    db.flush()
 
 
 def find_or_create_account(db: Session, name: str | None, domain: str | None, **defaults) -> Account | None:

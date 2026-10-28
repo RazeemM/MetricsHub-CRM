@@ -88,6 +88,11 @@ export default function ContactDetail() {
                     ) : (
                       <Text size="sm">{c.email}</Text>
                     ))}
+                  {!!c.previous_emails?.length && (
+                    <Text size="xs" c="dimmed">
+                      Previously {c.previous_emails.join(', ')}
+                    </Text>
+                  )}
                 </Field>
                 <Field label="Phone">{c.phone}</Field>
                 <Field label="Mobile">{c.mobile}</Field>

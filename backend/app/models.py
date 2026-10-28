@@ -117,6 +117,11 @@ class Contact(ExternalRefMixin, TimestampMixin, Base):
     def full_name(self) -> str:
         return " ".join(p for p in (self.first_name, self.last_name) if p) or (self.email or "")
 
+    @property
+    def previous_emails(self) -> list[str]:
+        """Addresses this person used before (e.g. @bmc.com before BMC Helix), kept by merges and reconciliations."""
+        return list((self.extra or {}).get("previous_emails") or [])
+
 
 Index("uq_contacts_email_lower", func.lower(Contact.email), unique=True)
 Index("uq_contacts_external", Contact.external_source, Contact.external_id, unique=True)

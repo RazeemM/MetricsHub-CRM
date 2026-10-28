@@ -401,3 +401,39 @@ def migrate_freshsales(
                          skipped=0, errors=rep.warnings[:100], created_by_id=user.id))
         db.commit()
     return {"files": [{"name": t[0], "rows": len(t[2])} for t in tables], **rep.as_dict()}
+
+
+# ---------------- BMC → BMC Helix address reconciliation ----------------
+@router.post("/migrations/bmc-helix")
+def reconcile_bmc_helix(
+    file: UploadFile = File(..., description="rapprochement_bmc_helix_historique.xlsx"),
+    commit: bool = Form(False),
+    apply_matches: bool = Form(True, description="move contacts to the probable Helix address"),
+    create_missing: bool = Form(True, description="create contacts that are not in the CRM"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Move BMC contacts to their BMC Helix address, merging duplicates and creating missing contacts.
+    Without commit it is a dry run: the report says exactly what would change."""
+    from ..migration import bmc_helix
+
+    raw = file.file.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise HTTPException(413, "File too large (max 20 MB)")
+    try:
+        rows, warnings = bmc_helix.parse(raw)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    rep = bmc_helix.apply(db, rows, dry_run=not commit, user=user, apply_matches=apply_matches,
+                          create_missing=create_missing)
+    rep.warnings[:0] = warnings
+    if commit:
+        db.add(ImportJob(entity="bmc_helix", filename=file.filename or "workbook", total=len(rows),
+                         created=rep.counts["created"],
+                         updated=rep.counts["email_updated"] + rep.counts["merged"] + rep.counts["updated"],
+                         skipped=sum(v for k, v in rep.counts.items() if k.startswith("skipped")),
+                         errors=rep.warnings[:100], created_by_id=user.id))
+        db.commit()
+    else:
+        db.rollback()
+    return {"file": file.filename, "rows": len(rows), **rep.as_dict()}

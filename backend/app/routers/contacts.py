@@ -26,7 +26,8 @@ def build_query(q=None, account_id=None, lifecycle=None, role=None, source=None,
         stmt = stmt.outerjoin(Account, Contact.account_id == Account.id).where(or_(
             Contact.email.ilike(term), Contact.first_name.ilike(term), Contact.last_name.ilike(term),
             func.concat(Contact.first_name, " ", Contact.last_name).ilike(term),
-            Contact.job_title.ilike(term), Account.name.ilike(term)))
+            Contact.job_title.ilike(term), Account.name.ilike(term),
+            Contact.extra["previous_emails"].astext.ilike(term)))
     if account_id:
         stmt = stmt.where(Contact.account_id == account_id)
     if lifecycle:

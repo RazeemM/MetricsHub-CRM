@@ -82,7 +82,8 @@ def search(q: str, db: Session = Depends(get_db), _: User = Depends(get_current_
     accounts = db.scalars(select(Account).where(or_(Account.name.ilike(term), Account.domain.ilike(term))).limit(8))
     contacts = db.scalars(select(Contact).where(or_(
         Contact.email.ilike(term), Contact.first_name.ilike(term), Contact.last_name.ilike(term),
-        func.concat(Contact.first_name, " ", Contact.last_name).ilike(term))).limit(8))
+        func.concat(Contact.first_name, " ", Contact.last_name).ilike(term),
+        Contact.extra["previous_emails"].astext.ilike(term))).limit(8))
     opps = db.scalars(select(Opportunity).where(Opportunity.title.ilike(term)).limit(8))
     accounts = list(accounts)
     licences = account_summary(db, [a.id for a in accounts])
