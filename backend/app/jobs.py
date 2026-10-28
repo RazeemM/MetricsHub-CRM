@@ -11,7 +11,7 @@ import sys
 
 from sqlalchemy import text
 
-from . import campaigns
+from . import campaigns, monitoring
 from .db import SessionLocal, engine
 from .entitlements import auto_close_lapsed, send_renewal_notices
 
@@ -50,19 +50,20 @@ def run_campaigns() -> int:
             lock_conn.commit()
 
 
-async def _loop(job, interval: int, name: str) -> None:
+async def _loop(job, interval: int, name: str, key: str) -> None:
     await asyncio.sleep(30)  # let the API finish starting
     while True:
         try:
             await asyncio.to_thread(job)
+            monitoring.record_job(key)
         except Exception:  # noqa: BLE001 - keep the loop alive; the next run retries
             log.exception("%s failed", name)
         await asyncio.sleep(interval)
 
 
 async def scheduler() -> None:
-    await asyncio.gather(_loop(run_renewals, INTERVAL_SECONDS, "Renewal check"),
-                         _loop(run_campaigns, CAMPAIGN_INTERVAL_SECONDS, "Campaign sending"))
+    await asyncio.gather(_loop(run_renewals, INTERVAL_SECONDS, "Renewal check", "renewals"),
+                         _loop(run_campaigns, CAMPAIGN_INTERVAL_SECONDS, "Campaign sending", "campaigns"))
 
 
 if __name__ == "__main__":

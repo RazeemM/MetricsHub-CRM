@@ -420,6 +420,78 @@ The CRM sends with Microsoft Graph, using the same app registration as single si
    - `CRM_MAIL_FROM=sales@metricshub.com` sends everything from one shared mailbox instead; replies then go to the user who sent it.
    - `CRM_MAIL_BACKEND=log` keeps messages on the server without sending them (staging and demos).
 
+## Monitoring: health, statistics and MetricsHub
+
+**Admin → System status** (`/system`) shows the CRM's health and usage, refreshed every 30 seconds:
+
+- **Health checks**, each *ok*, *degraded* or *failed*, with the reason:
+  - **Database**: reachable, and its response time.
+  - **Database schema**: migrations up to date.
+  - **Email**: settings complete, sends that failed in the last hour (for example Microsoft 365's `ErrorAccessDenied`), and paused campaigns.
+  - **Background jobs**: campaign sending ran in the last 5 minutes. Not checked when `CRM_RUN_SCHEDULER=false`.
+  - **Backups**: the last nightly dump is under 26 hours old (degraded) or 50 hours (failed), not empty, and the backup disk has space left.
+- **Statistics**:
+  - API requests, errors and average response time.
+  - Users signed in, records per object, and website form submissions.
+  - Emails sent and failed, the campaign queue and the last failures.
+  - Database size and connections, the largest tables, backups, recent sign-ins and imports.
+- A **Send test** button that checks email from the same page.
+
+Request and email counters are kept in memory and start again from zero when the API restarts.
+
+### Endpoints
+
+| Endpoint | Access | Use |
+|---|---|---|
+| `GET /api/health` | open | Liveness: the API answers (`{"status":"ok","service":"metricshub-crm"}`). |
+| `GET /api/health/ready` | open | Readiness: **503** when a check *failed*, 200 otherwise. Statuses only, no details. Used by the Docker healthcheck. |
+| `GET /api/monitoring/status` | token or admin | Everything on the System status page, as JSON. Read by the MetricsHub connector. |
+| `GET /api/metrics` | token or admin | The same figures in Prometheus text format (`crm_up`, `crm_check_status`, `crm_http_requests_total`, `crm_email_messages_total`, `crm_backup_age_seconds`…). |
+
+Give monitoring tools a token rather than a user account. Set it in `.env`, then run `docker compose up -d api`:
+
+```
+CRM_MONITORING_TOKEN=<output of: openssl rand -hex 32>
+```
+
+Send the token as `Authorization: Bearer <token>`. Tools that only do Basic authentication can send it as the password, with any username. Without a token, only signed-in administrators can read these endpoints.
+
+```bash
+curl -fsS -H "Authorization: Bearer $TOKEN" https://crm.metricshub.com/api/monitoring/status
+```
+
+The `api` and `web` containers have Docker healthchecks (`docker compose ps` shows *healthy* or *unhealthy*). The backup folder is mounted read-only into the API so it can check the backups.
+
+### MetricsHub Enterprise connector
+
+[`monitoring/metricshub/connectors/MetricsHubCRM/MetricsHubCRM.yaml`](monitoring/metricshub/connectors/MetricsHubCRM/MetricsHubCRM.yaml) reads `/api/monitoring/status` over HTTPS once per collect and reports three monitors:
+
+| Monitor | Metrics |
+|---|---|
+| `crm` (MetricsHub CRM) | `crm.status` (ok / degraded / failed), `crm.uptime`, `http.server.requests`, `http.server.errors{error.type}`, `http.server.request.time`, `crm.records{crm.object}`, `crm.users`, `crm.users.active{crm.period}`, `crm.email.messages{crm.email.purpose,state}`, `crm.campaign.recipients{state}`, `crm.campaigns{state}`, `crm.form.submissions{state}`, `crm.backup.age`, `crm.backup.size`, `crm.backup.files`, `crm.backup.disk.usage{state="free"}`, `crm.backup.disk.limit` |
+| `crm_check`, one per health check | `crm.check.status` (ok / degraded / failed); the check's message is its status information |
+| `crm_database` | `db.server.size`, `db.server.connections`, `db.server.connections.limit` |
+
+To use it:
+
+1. Copy the `MetricsHubCRM` folder into a folder for custom connectors on the MetricsHub agent, for example `/opt/metricshub/connectors-custom/`. Then set `patchDirectory: /opt/metricshub/connectors-custom` at the top of `metricshub.yaml`.
+2. Add the CRM as a resource. [`monitoring/metricshub/metricshub-crm.yaml`](monitoring/metricshub/metricshub-crm.yaml) is a ready-made example. The HTTP password is the monitoring token; encrypt it with `metricshub-encrypt`.
+3. Restart MetricsHub. The metrics then reach your backend over OTLP with the rest of your infrastructure (BMC Helix, Datadog, Grafana, Prometheus…).
+
+To check it from the command line:
+
+```bash
+metricshub crm.metricshub.com --type linux --https --http-port 443 -u metricshub -p <token> -pd /opt/metricshub/connectors-custom -c +MetricsHubCRM
+```
+
+Suggested alerts:
+- `crm.status` or `crm.check.status` is *failed*: page someone. *Degraded*: open a ticket; the message says why.
+- `crm.backup.age` is over 26 h.
+- `crm.campaigns{state="paused"}` is over 0.
+- The rate of `crm.email.messages{state="failed"}` is above 0.
+
+MetricsHub's own HTTP and Linux monitoring of the VM (CPU, memory, file systems) and its PostgreSQL connector complement this connector.
+
 ## Project layout
 
 ```
@@ -428,9 +500,11 @@ backend/
   app/pricing.py       deal value calculation
   app/services.py      business rules (contract dates, stage changes, account matching)
   app/webforms.py      website form submissions: checks, contact upsert, double opt-in
+  app/monitoring.py    health checks and statistics (System status page, /api/monitoring/status, /api/metrics)
   app/routers/         REST API (auth, sso, accounts, contacts, products, opportunities, activities, imports, dashboard)
   alembic/             database migrations
   tests/               pytest suite (pricing, API, import/export, SSO)
+monitoring/metricshub/ MetricsHub Enterprise connector and example resource configuration
 frontend/src/
   pages/               Dashboard, Pipeline, Opportunities, Accounts, Contacts, Products, Import, Users
   components/          layout, forms, line-item editor, activity timeline

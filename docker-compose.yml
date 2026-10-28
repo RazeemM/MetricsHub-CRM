@@ -21,9 +21,18 @@ services:
     env_file: .env
     environment:
       CRM_DATABASE_URL: postgresql+psycopg://crm:${POSTGRES_PASSWORD}@db:5432/crm
+    volumes:
+      - ./backups:/backups:ro  # lets the System status page and MetricsHub check the nightly backups
     depends_on:
       db:
         condition: service_healthy
+    # 503 when the database is unreachable, background jobs stopped or backups are missing
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   web:
     build: ./frontend
@@ -32,6 +41,11 @@ services:
       - "${WEB_PORT:-8080}:80"
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   backup:
     image: postgres:16-alpine

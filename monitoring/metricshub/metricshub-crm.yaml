@@ -1,0 +1,29 @@
+# MetricsHub Enterprise: monitor the CRM. Merge into your metricshub.yaml (or put it in its own file in the config
+# directory). Copy connectors/MetricsHubCRM into the custom connectors folder named by patchDirectory.
+
+patchDirectory: /opt/metricshub/connectors-custom
+
+resources:
+  metricshub-crm:
+    attributes:
+      host.name: crm.metricshub.com   # the public HTTPS address, or the VM and WEB_PORT (8080) from inside the network
+      host.type: linux
+    protocols:
+      http:
+        https: true
+        port: 443
+        username: metricshub          # ignored by the CRM
+        password: <CRM_MONITORING_TOKEN, encrypted with metricshub-encrypt>
+        timeout: 60
+    connectors: [ "+MetricsHubCRM" ]
+
+  # Optional: the VM itself (CPU, memory, file systems: backups and the database volume grow over time)
+  # crm-vm:
+  #   attributes:
+  #     host.name: <VM hostname>
+  #     host.type: linux
+  #   protocols:
+  #     ssh:
+  #       username: metricshub
+  #       password: <password>
+  #       timeout: 120

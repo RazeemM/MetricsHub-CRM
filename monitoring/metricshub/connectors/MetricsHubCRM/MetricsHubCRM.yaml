@@ -1,0 +1,270 @@
+---
+# MetricsHub connector for the MetricsHub & Sentry CRM (this repository).
+# It reads one endpoint, /api/monitoring/status, authenticated with the CRM's monitoring token (CRM_MONITORING_TOKEN)
+# sent as the HTTP password (Basic authentication; the username is ignored).
+# Columns produced by json2Csv start with the JSON entry path ($1); the properties follow from $2.
+connector:
+  displayName: MetricsHub CRM
+  platforms: MetricsHub CRM
+  reliesOn: MetricsHub CRM REST API (/api/monitoring/status)
+  version: 1.0
+  information: >-
+    Monitors the MetricsHub & Sentry CRM web application through its REST API: overall health and each health check
+    (database, schema, email, background jobs, backups), API traffic and errors, records, users, email sending and
+    campaign queue, website forms, the PostgreSQL database and the nightly backups.
+  detection:
+    connectionTypes:
+    - remote
+    appliesTo:
+    - Linux
+    - Windows
+    - OOB
+    criteria:
+    # Unauthenticated fingerprint first, then the token
+    - type: http
+      method: get
+      path: /api/health
+      header: "Accept: application/json"
+      resultContent: body
+      expectedResult: metricshub-crm
+      errorMessage: Not a MetricsHub CRM (no answer from /api/health). Check the hostname, port and HTTPS setting.
+    - type: http
+      method: get
+      path: /api/monitoring/status
+      header: |
+        Accept: application/json
+        Authorization: Basic %{BASIC_AUTH_BASE64}
+      resultContent: http_status
+      expectedResult: "200"
+      errorMessage: The CRM refused the monitoring token. Set the HTTP password to the value of CRM_MONITORING_TOKEN.
+    tags: [ application, crm, http ]
+
+metrics:
+  crm.status:
+    description: Overall health of the CRM (the worst of its health checks).
+    type:
+      stateSet:
+      - ok
+      - degraded
+      - failed
+  crm.uptime:
+    description: Time since the CRM API process started.
+    type: Gauge
+    unit: s
+  http.server.requests:
+    description: Number of API requests answered since the API started.
+    type: Counter
+    unit: "{request}"
+  http.server.errors:
+    description: Number of API requests answered with an error, by class (client = 4xx, server = 5xx).
+    type: Counter
+    unit: "{request}"
+  http.server.request.time:
+    description: Total time spent answering API requests since the API started.
+    type: Counter
+    unit: s
+  crm.records:
+    description: Number of records, by object.
+    type: UpDownCounter
+    unit: "{record}"
+  crm.users:
+    description: Number of enabled user accounts.
+    type: UpDownCounter
+    unit: "{user}"
+  crm.users.active:
+    description: Number of users who signed in during the period.
+    type: UpDownCounter
+    unit: "{user}"
+  crm.email.messages:
+    description: Emails sent or failed since the API started, by purpose (transactional or bulk) and state.
+    type: Counter
+    unit: "{message}"
+  crm.campaign.recipients:
+    description: Campaign recipients, by state (queued recipients are waiting to be sent).
+    type: UpDownCounter
+    unit: "{recipient}"
+  crm.campaigns:
+    description: Campaigns sending (or scheduled) and paused after an error.
+    type: UpDownCounter
+    unit: "{campaign}"
+  crm.form.submissions:
+    description: Website form submissions, by state.
+    type: UpDownCounter
+    unit: "{submission}"
+  crm.backup.age:
+    description: Age of the most recent database backup.
+    type: Gauge
+    unit: s
+  crm.backup.size:
+    description: Size of the most recent database backup.
+    type: Gauge
+    unit: By
+  crm.backup.files:
+    description: Number of database backups kept.
+    type: UpDownCounter
+    unit: "{file}"
+  crm.backup.disk.usage:
+    description: Free space on the volume that holds the backups.
+    type: UpDownCounter
+    unit: By
+  crm.backup.disk.limit:
+    description: Size of the volume that holds the backups.
+    type: UpDownCounter
+    unit: By
+  crm.check.status:
+    description: State of a CRM health check.
+    type:
+      stateSet:
+      - ok
+      - degraded
+      - failed
+  db.server.size:
+    description: Size of the CRM database.
+    type: UpDownCounter
+    unit: By
+  db.server.connections:
+    description: Open connections to the CRM database.
+    type: UpDownCounter
+    unit: "{connection}"
+  db.server.connections.limit:
+    description: Maximum number of connections the database server accepts.
+    type: Gauge
+    unit: "{connection}"
+
+beforeAll:
+  # One request per collect; every monitor below reads this document
+  status:
+    type: http
+    method: get
+    path: /api/monitoring/status
+    header: |
+      Accept: application/json
+      Authorization: Basic %{BASIC_AUTH_BASE64}
+    resultContent: body
+
+monitors:
+  # The CRM application itself
+  crm:
+    keys:
+    - id
+    simple:
+      sources:
+        # $1=JSON_ID; $2=service; $3=version; $4=status; $5=uptime_seconds;
+        # $6=http.requests; $7=http.client_errors; $8=http.server_errors; $9=http.duration_seconds;
+        # $10..$19=records (accounts; contacts; opportunities; open_opportunities; quotes; licences; activities;
+        #           campaigns; lists; users)
+        # $20=users.enabled; $21=users.active_24h; $22=users.active_7d;
+        # $23=email.transactional_sent; $24=email.transactional_failed; $25=email.bulk_sent; $26=email.bulk_failed;
+        # $27..$30=email.recipients_ (queued; sent; failed; skipped); $31=email.campaigns_sending; $32=email.campaigns_paused;
+        # $33..$36=forms (accepted; pending; spam; error);
+        # $37=backups.age_seconds; $38=backups.last_bytes; $39=backups.count; $40=backups.disk_free_bytes;
+        # $41=backups.disk_total_bytes
+        application:
+          type: copy
+          from: ${source::beforeAll.status}
+          computes:
+          - type: json2Csv
+            entryKey: /
+            properties: >-
+              /service;/version;/status;/uptime_seconds;/http/requests;/http/client_errors;/http/server_errors;/http/duration_seconds;/records/accounts;/records/contacts;/records/opportunities;/records/open_opportunities;/records/quotes;/records/licences;/records/activities;/records/campaigns;/records/lists;/records/users;/users/enabled;/users/active_24h;/users/active_7d;/email/transactional_sent;/email/transactional_failed;/email/bulk_sent;/email/bulk_failed;/email/recipients_queued;/email/recipients_sent;/email/recipients_failed;/email/recipients_skipped;/email/campaigns_sending;/email/campaigns_paused;/forms/accepted;/forms/pending;/forms/spam;/forms/error;/backups/age_seconds;/backups/last_bytes;/backups/count;/backups/disk_free_bytes;/backups/disk_total_bytes
+            separator: ;
+      mapping:
+        source: ${source::application}
+        attributes:
+          id: $2
+          name: MetricsHub CRM
+          service.name: $2
+          service.version: $3
+        metrics:
+          crm.status: $4
+          crm.uptime: $5
+          http.server.requests: $6
+          http.server.errors{error.type="client"}: $7
+          http.server.errors{error.type="server"}: $8
+          http.server.request.time: $9
+          crm.records{crm.object="accounts"}: $10
+          crm.records{crm.object="contacts"}: $11
+          crm.records{crm.object="opportunities"}: $12
+          crm.records{crm.object="open_opportunities"}: $13
+          crm.records{crm.object="quotes"}: $14
+          crm.records{crm.object="licences"}: $15
+          crm.records{crm.object="activities"}: $16
+          crm.records{crm.object="campaigns"}: $17
+          crm.records{crm.object="lists"}: $18
+          crm.records{crm.object="users"}: $19
+          crm.users: $20
+          crm.users.active{crm.period="1d"}: $21
+          crm.users.active{crm.period="7d"}: $22
+          crm.email.messages{crm.email.purpose="transactional",state="sent"}: $23
+          crm.email.messages{crm.email.purpose="transactional",state="failed"}: $24
+          crm.email.messages{crm.email.purpose="bulk",state="sent"}: $25
+          crm.email.messages{crm.email.purpose="bulk",state="failed"}: $26
+          crm.campaign.recipients{state="queued"}: $27
+          crm.campaign.recipients{state="sent"}: $28
+          crm.campaign.recipients{state="failed"}: $29
+          crm.campaign.recipients{state="skipped"}: $30
+          crm.campaigns{state="sending"}: $31
+          crm.campaigns{state="paused"}: $32
+          crm.form.submissions{state="accepted"}: $33
+          crm.form.submissions{state="pending"}: $34
+          crm.form.submissions{state="spam"}: $35
+          crm.form.submissions{state="error"}: $36
+          crm.backup.age: $37
+          crm.backup.size: $38
+          crm.backup.files: $39
+          crm.backup.disk.usage{state="free"}: $40
+          crm.backup.disk.limit: $41
+
+  # One instance per health check: database, migrations, mail, scheduler, backups
+  crm_check:
+    simple:
+      type: multiInstance
+      keys:
+      - id
+      sources:
+        # $1=JSON_ID; $2=name; $3=label; $4=status; $5=message (last: it is free text)
+        checks:
+          type: copy
+          from: ${source::beforeAll.status}
+          computes:
+          - type: json2Csv
+            entryKey: /checks
+            properties: /name;/label;/status;/message
+            separator: ;
+      mapping:
+        source: ${source::checks}
+        attributes:
+          id: $2
+          name: $3
+          crm.check.name: $2
+        metrics:
+          crm.check.status: $4
+        legacyTextParameters:
+          StatusInformation: $5
+
+  # The CRM's PostgreSQL database, as seen by the CRM
+  crm_database:
+    keys:
+    - id
+    simple:
+      sources:
+        # $1=JSON_ID; $2=service; $3=size_bytes; $4=connections; $5=max_connections; $6=version
+        database:
+          type: copy
+          from: ${source::beforeAll.status}
+          computes:
+          - type: json2Csv
+            entryKey: /
+            properties: /service;/database/size_bytes;/database/connections;/database/max_connections;/database/version
+            separator: ;
+      mapping:
+        source: ${source::database}
+        attributes:
+          id: crm-database
+          name: MetricsHub CRM database
+          db.system: postgresql
+          db.version: $6
+        metrics:
+          db.server.size: $3
+          db.server.connections: $4
+          db.server.connections.limit: $5

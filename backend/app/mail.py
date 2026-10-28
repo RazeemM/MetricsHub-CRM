@@ -293,21 +293,32 @@ class MailSession:
         self.conn = None
 
     def __enter__(self) -> MailSession:
-        if not status(self.purpose)["enabled"]:
-            raise MailError("Email sending is not configured (CRM_MAIL_BACKEND)")
-        if self.backend == "smtp":
-            self.conn = _smtp_connect()
+        from . import monitoring
+        try:
+            if not status(self.purpose)["enabled"]:
+                raise MailError("Email sending is not configured (CRM_MAIL_BACKEND)")
+            if self.backend == "smtp":
+                self.conn = _smtp_connect()
+        except MailError as exc:
+            monitoring.record_mail(self.purpose, False, error=str(exc))
+            raise
         return self
 
     def send(self, msg: Message) -> None:
-        if self.backend == "log":
-            outbox.append(msg)
-        elif self.backend == "smtp":
-            _smtp_send(self.conn, msg)
-        elif self.backend == "graph":
-            _graph_send(msg)
-        else:
-            raise MailError("Email sending is not configured")
+        from . import monitoring
+        try:
+            if self.backend == "log":
+                outbox.append(msg)
+            elif self.backend == "smtp":
+                _smtp_send(self.conn, msg)
+            elif self.backend == "graph":
+                _graph_send(msg)
+            else:
+                raise MailError("Email sending is not configured")
+        except MailError as exc:
+            monitoring.record_mail(self.purpose, False, msg, str(exc))
+            raise
+        monitoring.record_mail(self.purpose, True)
 
     def __exit__(self, *exc) -> None:
         if self.conn is not None:

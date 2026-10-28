@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     # Run the daily renewal check inside the API process (disable when running it from cron instead)
     run_scheduler: bool = True
 
+    # Monitoring: a long random token that lets MetricsHub, Prometheus or another tool read /api/monitoring/status
+    # and /api/metrics without a user account (Authorization: Bearer <token>, or Basic with the token as password).
+    # Empty = only signed-in administrators can read them.
+    monitoring_token: str = ""
+    # Folder holding the backup container's dumps, mounted read-only into the API; empty or missing = not checked
+    backup_dir: str = "/backups"
+
 
 @lru_cache
 def get_settings() -> Settings:

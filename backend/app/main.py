@@ -1,15 +1,17 @@
 import asyncio
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
+from . import monitoring as stats
 from .config import get_settings
 from .db import SessionLocal
 from .routers import (
     accounts, activities, compose, contacts, core, dashboard, email, entitlements, imports, insights, marketing,
-    opportunities, products, public, quotes, sso, webforms,
+    monitoring, opportunities, products, public, quotes, sso, webforms,
 )
 from .jobs import scheduler
 from .seed import seed
@@ -41,7 +43,7 @@ API_DESCRIPTION = """CRM for MetricsHub and Sentry Software: accounts, contacts,
 `/api/export/{opportunities,accounts,contacts}?fmt=csv|xlsx`."""
 
 # Docs live under /api so they are reachable through the web container's nginx (which only forwards /api/)
-app = FastAPI(title="MetricsHub & Sentry CRM", version="0.1.0", lifespan=lifespan, description=API_DESCRIPTION,
+app = FastAPI(title="MetricsHub & Sentry CRM", version=stats.VERSION, lifespan=lifespan, description=API_DESCRIPTION,
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json",
               swagger_ui_parameters={"persistAuthorization": True})
 app.add_middleware(
@@ -52,6 +54,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def count_requests(request: Request, call_next):
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        stats.record_request(request.url.path, 500, time.perf_counter() - start)
+        raise
+    stats.record_request(request.url.path, response.status_code, time.perf_counter() - start)
+    return response
 
 
 @app.middleware("http")
@@ -73,10 +86,11 @@ async def public_forms_cors(request: Request, call_next):
 
 
 for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements,
-          email, marketing, compose, insights, public, webforms):
+          email, marketing, compose, insights, public, webforms, monitoring):
     app.include_router(r.router)
 
 
-@app.get("/api/health", tags=["health"])
+@app.get("/api/health", tags=["monitoring"])
 def health():
-    return {"status": "ok"}
+    """Liveness: the API process answers. /api/health/ready also checks the database and background jobs."""
+    return {"status": "ok", "service": "metricshub-crm", "version": stats.VERSION}
