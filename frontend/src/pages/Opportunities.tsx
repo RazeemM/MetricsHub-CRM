@@ -7,6 +7,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, Pager } from '../components/common'
+import { SortTh, type Sort } from '../components/ui'
 import { useBrands, usePlatforms } from '../hooks'
 import { fmtDate, money } from '../labels'
 import type { Opportunity, Page } from '../types'
@@ -21,12 +22,16 @@ export default function Opportunities() {
   const [brandId, setBrandId] = useState<string | null>(null)
   const [platformId, setPlatformId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [sort, setSort] = useState<Sort>({ key: 'updated_at', desc: true })
   const [debounced] = useDebouncedValue(q, 250)
+  const th = { sort, onSort: (s: Sort) => { setSort(s); setPage(1) } }
   const params = {
     q: debounced,
     status: status === 'all' ? undefined : status,
     brand_id: brandId ?? undefined,
     referring_platform_id: platformId ?? undefined,
+    sort: sort.key,
+    desc: sort.desc,
     page,
     page_size: 50,
   }
@@ -73,15 +78,22 @@ export default function Opportunities() {
           <Table highlightOnHover verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Title</Table.Th>
-                <Table.Th>Account</Table.Th>
-                <Table.Th>Brand</Table.Th>
-                <Table.Th>Stage</Table.Th>
-                <Table.Th>Platform</Table.Th>
-                <Table.Th ta="right">TCV</Table.Th>
-                <Table.Th ta="right">Weighted</Table.Th>
-                <Table.Th>Close</Table.Th>
-                <Table.Th>Owner</Table.Th>
+                <SortTh label="Title" sortKey="title" {...th} />
+                <SortTh label="Account" sortKey="account" {...th} />
+                <SortTh label="Brand" sortKey="brand" {...th} />
+                <SortTh label="Stage" sortKey="stage" {...th} info="Sorts in pipeline order, from New to Lost." />
+                <SortTh label="Platform" sortKey="platform" {...th} info="The observability platform (BMC Helix, Datadog…) that referred the deal." />
+                <SortTh label="TCV" sortKey="amount" ta="right" firstDesc {...th} info="Total contract value: every line item over the whole contract term." />
+                <SortTh
+                  label="Weighted"
+                  sortKey="weighted"
+                  ta="right"
+                  firstDesc
+                  {...th}
+                  info="TCV × the win probability: the deal's own probability when set, otherwise its stage's."
+                />
+                <SortTh label="Close" sortKey="close" {...th} info="Expected close date. Deals without one come last." />
+                <SortTh label="Owner" sortKey="owner" {...th} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>

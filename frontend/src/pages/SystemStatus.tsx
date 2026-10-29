@@ -7,6 +7,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader } from '../components/common'
+import { InfoTip, Stat } from '../components/ui'
 import { useApiMutation } from '../hooks'
 
 type State = 'ok' | 'degraded' | 'failed'
@@ -91,30 +92,13 @@ function duration(seconds: number | null | undefined) {
   return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`
 }
 
-function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
-  return (
-    <Card withBorder padding="md">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text size="xl" fw={700} mt={4}>
-        {value}
-      </Text>
-      {hint && (
-        <Text size="xs" c="dimmed">
-          {hint}
-        </Text>
-      )}
-    </Card>
-  )
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, info, children }: { title: string; info?: ReactNode; children: ReactNode }) {
   return (
     <Card withBorder>
-      <Title order={5} mb="sm">
-        {title}
-      </Title>
+      <Group gap={6} mb="sm">
+        <Title order={5}>{title}</Title>
+        <InfoTip info={info} />
+      </Group>
       {children}
     </Card>
   )
@@ -193,19 +177,21 @@ export default function SystemStatus() {
 
           {s.http && s.users && s.database && (
             <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }}>
-              <Stat label="API requests" value={n(s.http.requests)} hint="since the API started" />
+              <Stat label="API requests" value={n(s.http.requests)} hint="since the API started" info="Requests answered by the API, not counting health checks and monitoring. Starts again from zero when the API restarts." />
               <Stat
                 label="Errors"
                 value={`${n(s.http.server_errors)} / ${n(s.http.client_errors)}`}
                 hint="server (5xx) / client (4xx)"
+                info="Server errors are bugs or outages and worth a look. Client errors are mostly normal: expired sign-ins, validation messages, pages not found."
               />
-              <Stat label="Average response" value={s.http.average_ms == null ? '—' : `${s.http.average_ms} ms`} />
-              <Stat label="Users signed in" value={n(s.users.active_24h)} hint={`last 24 h · ${n(s.users.active_7d)} in 7 days · ${n(s.users.enabled)} enabled`} />
-              <Stat label="Database" value={bytes(s.database.size_bytes)} hint={`${s.database.connections} / ${s.database.max_connections} connections`} />
+              <Stat label="Average response" value={s.http.average_ms == null ? '—' : `${s.http.average_ms} ms`} info="Average time the API took to answer, since it started. Imports and exports raise it." />
+              <Stat label="Users signed in" value={n(s.users.active_24h)} hint={`last 24 h · ${n(s.users.active_7d)} in 7 days · ${n(s.users.enabled)} enabled`} info="Users whose last sign-in was in the last 24 hours, the last 7 days, and the number of enabled accounts." />
+              <Stat label="Database" value={bytes(s.database.size_bytes)} hint={`${s.database.connections} / ${s.database.max_connections} connections`} info="Size of the PostgreSQL database, and open connections against the server's limit." />
               <Stat
                 label="Last backup"
                 value={b ? duration(b.age_seconds) + ' ago' : '—'}
                 hint={b ? `${bytes(b.disk_free_bytes)} free on the backup disk` : 'Backup folder not mounted'}
+                info="Age of the newest nightly dump in the backups folder. Over 26 hours is degraded, over 50 hours failed."
               />
             </SimpleGrid>
           )}
@@ -213,10 +199,10 @@ export default function SystemStatus() {
           {e && (
             <Section title="Email">
               <SimpleGrid cols={{ base: 2, sm: 4 }} mb="md">
-                <Stat label="Sent" value={n(Number(e.transactional_sent) + Number(e.bulk_sent))} hint="since the API started" />
-                <Stat label="Failed" value={n(Number(e.transactional_failed) + Number(e.bulk_failed))} hint="since the API started" />
-                <Stat label="Campaign queue" value={n(Number(e.recipients_queued))} hint={`${n(Number(e.campaigns_sending))} sending · ${n(Number(e.campaigns_paused))} paused`} />
-                <Stat label="Campaign recipients" value={n(Number(e.recipients_sent))} hint={`${n(Number(e.recipients_failed))} failed · ${n(Number(e.recipients_skipped))} skipped`} />
+                <Stat label="Sent" value={n(Number(e.transactional_sent) + Number(e.bulk_sent))} hint="since the API started" info="Quotes, emails written in the CRM, notices and campaign emails accepted by the mail server." />
+                <Stat label="Failed" value={n(Number(e.transactional_failed) + Number(e.bulk_failed))} hint="since the API started" info="Sends the mail server refused, or that could not start because email is not set up. The table below lists the last ones." />
+                <Stat label="Campaign queue" value={n(Number(e.recipients_queued))} hint={`${n(Number(e.campaigns_sending))} sending · ${n(Number(e.campaigns_paused))} paused`} info="Campaign recipients waiting to be sent. A campaign pauses when the mail server refuses it, and the reason shows below." />
+                <Stat label="Campaign recipients" value={n(Number(e.recipients_sent))} hint={`${n(Number(e.recipients_failed))} failed · ${n(Number(e.recipients_skipped))} skipped`} info="All campaign emails ever sent, with those refused and those skipped (no address, unsubscribed, no consent)." />
               </SimpleGrid>
               <Text size="sm" c="dimmed" mb="xs">
                 Backend: {String(e.backend)}
@@ -284,7 +270,7 @@ export default function SystemStatus() {
               </Section>
             )}
             {s.tables && s.database && (
-              <Section title={`Largest tables · PostgreSQL ${s.database.version}`}>
+              <Section title={`Largest tables · PostgreSQL ${s.database.version}`} info="Size on disk includes indexes. Row counts are PostgreSQL's estimates.">
                 <Table fz="sm">
                   <Table.Thead>
                     <Table.Tr>

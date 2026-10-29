@@ -2,7 +2,7 @@ import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from .. import audiences
 from ..crud import apply_changes, audit, get_or_404, paginate
@@ -14,8 +14,9 @@ from ..services import find_contact_by_email
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
-SORTS = {"name": Contact.last_name, "email": Contact.email, "created_at": Contact.created_at,
-         "updated_at": Contact.updated_at, "lifecycle": Contact.lifecycle}
+SORTS = {"name": func.lower(func.concat(Contact.last_name, " ", Contact.first_name)), "email": Contact.email,
+         "created_at": Contact.created_at, "updated_at": Contact.updated_at, "lifecycle": Contact.lifecycle,
+         "role": Contact.role, "source": Contact.source}
 
 
 def build_query(q=None, account_id=None, lifecycle=None, role=None, source=None, brand_id=None, owner_id=None,
@@ -68,9 +69,13 @@ def list_contacts(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    col = SORTS.get(sort, Contact.created_at)
     audience = get_or_404(db, Audience, audience_id) if audience_id else None
     stmt = build_query(q, account_id, lifecycle, role, source, brand_id, owner_id, account_type, list_id, audience)
+    if sort == "account":
+        acc = aliased(Account)
+        stmt, col = stmt.outerjoin(acc, Contact.account_id == acc.id), func.lower(acc.name)
+    else:
+        col = SORTS.get(sort, Contact.created_at)
     stmt = stmt.order_by(col.desc().nulls_last() if desc else col.asc().nulls_last(), Contact.id)
     items, total = paginate(db, stmt, page, page_size)
     return Page(items=items, total=total, page=page, page_size=page_size)

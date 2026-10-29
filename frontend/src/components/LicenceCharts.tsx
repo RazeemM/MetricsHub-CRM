@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { money } from '../labels'
+import { InfoTip } from './ui'
 import { LapsedLicencesCard } from './Licences'
 
 interface Analytics {
@@ -48,13 +49,16 @@ function slices(rows: { name: string; value: number }[], palette: { series: stri
 }
 
 /** A chart card with a Chart / Table switch: the table is the accessible, exact view of the same numbers. */
-function ChartCard({ title, subtitle, controls, chart, table }: { title: string; subtitle?: ReactNode; controls?: ReactNode; chart: ReactNode; table: ReactNode }) {
+function ChartCard({ title, subtitle, info, controls, chart, table }: { title: string; subtitle?: ReactNode; info?: ReactNode; controls?: ReactNode; chart: ReactNode; table: ReactNode }) {
   const [view, setView] = useState('chart')
   return (
     <Card withBorder h="100%">
       <Group justify="space-between" align="flex-start" mb="xs" wrap="nowrap">
         <div>
-          <Title order={5}>{title}</Title>
+          <Group gap={6} wrap="nowrap">
+            <Title order={5}>{title}</Title>
+            <InfoTip info={info} />
+          </Group>
           {subtitle && (
             <Text size="xs" c="dimmed">
               {subtitle}
@@ -186,6 +190,7 @@ export function LicenceCharts() {
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <ChartCard
             title="Products"
+            info="From the BMC MarketZone reports and licences added by hand. Customers: how many customers hold each product. Revenue: net amount invoiced for it. Slices beyond the top 5 are grouped as Other."
             subtitle={productBy === 'customers' ? (period === 'all' ? 'Customers holding each product now' : `Customers with a paid licence in ${periodLabel}`) : `Invoiced, ${periodLabel}`}
             controls={
               <SegmentedControl
@@ -205,6 +210,7 @@ export function LicenceCharts() {
         <Grid.Col span={{ base: 12, lg: 7 }}>
           <ChartCard
             title="Revenue by region and country"
+            info="Net amount invoiced in the period, by the customer's region and country. Switch to Table for exact figures."
             subtitle={`Share of invoiced amount, ${periodLabel}`}
             chart={
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
@@ -223,6 +229,7 @@ export function LicenceCharts() {
         <Grid.Col span={{ base: 12, lg: 6 }}>
           <ChartCard
             title="Active customers"
+            info="A customer counts in a period when at least one of its licences is paid for part of that period."
             subtitle={`Customers with a paid licence during each ${granularity === 'year' ? 'calendar year' : 'quarter'}, by region`}
             chart={
               <BarChart
@@ -246,6 +253,7 @@ export function LicenceCharts() {
         <Grid.Col span={{ base: 12, lg: 6 }}>
           <ChartCard
             title="Invoiced and paid to Sentry"
+            info="Invoiced: the net amount BMC billed customers. Paid to Sentry: Sentry's fee on those lines, as reported by BMC MarketZone."
             subtitle="By invoice year: amount BMC invoiced customers (net) and the fee due to Sentry"
             chart={
               <Stack gap={6}>

@@ -564,5 +564,18 @@ class FormSubmission(Base):
     note: Mapped[str | None] = mapped_column(String(500))  # why spam / error, or that the confirmation was sent
 
 
+class SavedView(TimestampMixin, Base):
+    """A named set of filters for a page (the pipeline board), private to its owner or shared with everyone."""
+
+    __tablename__ = "saved_views"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity: Mapped[str] = mapped_column(String(20), index=True)  # pipeline
+    name: Mapped[str] = mapped_column(String(120))
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    shared: Mapped[bool] = mapped_column(Boolean, default=False)
+    filters: Mapped[dict] = mapped_column(JSONB, default=dict)
+    owner: Mapped[User] = relationship()
+
+
 Index("uq_accounts_external", Account.external_source, Account.external_id, unique=True)
 Index("uq_opportunities_external", Opportunity.external_source, Opportunity.external_id, unique=True)

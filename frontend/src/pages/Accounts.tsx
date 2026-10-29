@@ -8,6 +8,7 @@ import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { AccountTypeBadge, PageHeader, Pager } from '../components/common'
 import { AccountFormModal } from '../components/forms'
+import { SortTh, type Sort } from '../components/ui'
 import { ACCOUNT_TYPES, toOptions } from '../labels'
 import type { Account, Page } from '../types'
 
@@ -17,9 +18,11 @@ export default function Accounts() {
   const [q, setQ] = useState('')
   const [types, setTypes] = useState<string[]>([])
   const [page, setPage] = useState(1)
+  const [sort, setSort] = useState<Sort>({ key: 'name', desc: false })
   const [debounced] = useDebouncedValue(q, 250)
   const [opened, { open, close }] = useDisclosure()
-  const params = { q: debounced, account_type: types, page, page_size: 50 }
+  const params = { q: debounced, account_type: types, sort: sort.key, desc: sort.desc, page, page_size: 50 }
+  const th = { sort, onSort: (s: Sort) => { setSort(s); setPage(1) } }
   const { data } = useQuery({
     queryKey: ['accounts', params],
     queryFn: () => api<Page<Account>>('/accounts', { params }),
@@ -53,13 +56,13 @@ export default function Accounts() {
           <Table highlightOnHover verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Type</Table.Th>
-                <Table.Th>Domain</Table.Th>
-                <Table.Th>Country</Table.Th>
-                <Table.Th>Contacts</Table.Th>
-                <Table.Th>Open deals</Table.Th>
-                <Table.Th>Owner</Table.Th>
+                <SortTh label="Name" sortKey="name" {...th} />
+                <SortTh label="Type" sortKey="account_type" {...th} />
+                <SortTh label="Domain" sortKey="domain" {...th} />
+                <SortTh label="Country" sortKey="country" {...th} />
+                <SortTh label="Contacts" sortKey="contacts" firstDesc {...th} />
+                <SortTh label="Open deals" sortKey="open_deals" firstDesc {...th} info="Opportunities of this account not yet won or lost." />
+                <SortTh label="Owner" sortKey="owner" {...th} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>

@@ -1,13 +1,15 @@
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd'
-import { Badge, Button, Card, Group, SegmentedControl, Select, Stack, Text } from '@mantine/core'
+import { Badge, Button, Card, Group, SegmentedControl, Stack, Text, Tooltip } from '@mantine/core'
 import { IconPlus } from '@tabler/icons-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useDebouncedValue } from '@mantine/hooks'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader } from '../components/common'
-import { useApiMutation, useBrands, usePipelines, usePlatforms, useUsers } from '../hooks'
+import { boardParams, DEFAULT_FILTERS, PipelineViewBar, type ViewFilters } from '../components/PipelineViews'
+import { useApiMutation, usePipelines } from '../hooks'
 import { fmtDate, money } from '../labels'
 import type { Ref, UserRef } from '../types'
 
@@ -33,19 +35,15 @@ interface Board {
 export default function PipelineBoard() {
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { canWrite } = useAuth()
+  const { canWrite, user } = useAuth()
   const { data: pipelines } = usePipelines()
-  const { data: brands } = useBrands()
-  const { data: users } = useUsers()
-  const { data: platforms } = usePlatforms()
-  const [pipelineId, setPipelineId] = useState<string | null>(null)
-  const [brandId, setBrandId] = useState<string | null>(null)
-  const [ownerId, setOwnerId] = useState<string | null>(null)
-  const [platformId, setPlatformId] = useState<string | null>(null)
-  const pid = pipelineId ?? (pipelines?.[0] ? String(pipelines[0].id) : null)
-  const params = { pipeline_id: pid ?? undefined, brand_id: brandId ?? undefined, owner_id: ownerId ?? undefined, referring_platform_id: platformId ?? undefined }
+  const [filters, setFilters] = useState<ViewFilters>(DEFAULT_FILTERS)
+  const [debouncedQ] = useDebouncedValue(filters.q, 250)
+  const known = pipelines?.some((p) => p.id === filters.pipeline_id)
+  const pid = known ? String(filters.pipeline_id) : pipelines?.[0] ? String(pipelines[0].id) : null
+  const params = boardParams({ ...filters, q: debouncedQ }, user?.id, pid)
   const key = ['board', params]
-  const { data } = useQuery({ queryKey: key, queryFn: () => api<Board>('/opportunities/board', { params }), enabled: !!pid })
+  const { data } = useQuery({ queryKey: key, queryFn: () => api<Board>('/opportunities/board', { params }), enabled: !!pid, placeholderData: keepPreviousData })
 
   const move = useApiMutation(
     (v: { oppId: number; stageId: number }) => api(`/opportunities/${v.oppId}/stage`, { method: 'POST', body: { stage_id: v.stageId } }),
@@ -84,19 +82,14 @@ export default function PipelineBoard() {
           )
         }
       />
-      <Group mb="md" gap="sm">
-        <SegmentedControl data={(pipelines ?? []).map((p) => ({ value: String(p.id), label: p.name }))} value={pid ?? ''} onChange={setPipelineId} />
-        <Select placeholder="All brands" data={(brands ?? []).map((b) => ({ value: String(b.id), label: b.name }))} value={brandId} onChange={setBrandId} clearable w={180} />
-        <Select placeholder="All owners" data={(users ?? []).map((u) => ({ value: String(u.id), label: u.full_name }))} value={ownerId} onChange={setOwnerId} clearable searchable w={180} />
-        <Select
-          placeholder="All platforms"
-          data={(platforms?.items ?? []).map((a) => ({ value: String(a.id), label: a.name }))}
-          value={platformId}
-          onChange={setPlatformId}
-          clearable
-          w={220}
+      <Group mb="xs" gap="sm">
+        <SegmentedControl
+          data={(pipelines ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+          value={pid ?? ''}
+          onChange={(v) => setFilters((f) => ({ ...f, pipeline_id: Number(v) }))}
         />
       </Group>
+      <PipelineViewBar filters={filters} onFilters={setFilters} />
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="kanban">
           {data?.columns.map((col) => {
@@ -110,13 +103,26 @@ export default function PipelineBoard() {
                         <Text fw={700} size="sm">
                           {col.stage.name}
                         </Text>
-                        <Badge size="sm" variant="light" color={col.stage.kind === 'won' ? 'green' : col.stage.kind === 'lost' ? 'gray' : 'violet'}>
-                          {col.count}
-                        </Badge>
+                        <Tooltip label={`${col.count} deal${col.count === 1 ? '' : 's'} in this stage, with the filters applied`} withArrow>
+                          <Badge size="sm" variant="light" color={col.stage.kind === 'won' ? 'green' : col.stage.kind === 'lost' ? 'gray' : 'violet'}>
+                            {col.count}
+                          </Badge>
+                        </Tooltip>
                       </Group>
-                      <Text size="xs" c="dimmed">
-                        {currencies.length > 1 ? 'mixed currencies' : money(col.total, currencies[0] ?? 'USD')} · {col.stage.probability}%
-                      </Text>
+                      <Tooltip
+                        multiline
+                        w={260}
+                        withArrow
+                        label={
+                          currencies.length > 1
+                            ? 'Deals in several currencies: totals are not added across currencies.'
+                            : `Total value ${money(col.total, currencies[0] ?? 'USD')}, weighted ${money(col.weighted, currencies[0] ?? 'USD')}. ${col.stage.probability}% is the stage's win probability: weighted = value × probability (or the deal's own probability when set).`
+                        }
+                      >
+                        <Text size="xs" c="dimmed" style={{ cursor: 'help' }}>
+                          {currencies.length > 1 ? 'mixed currencies' : money(col.total, currencies[0] ?? 'USD')} · {col.stage.probability}%
+                        </Text>
+                      </Tooltip>
                     </Stack>
                     <Stack gap={6}>
                       {col.items.map((o, i) => (

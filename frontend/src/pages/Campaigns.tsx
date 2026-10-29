@@ -27,6 +27,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, Pager } from '../components/common'
+import { Stat } from '../components/ui'
 import { EmailEditor, MailStatus, useMailSettings } from '../components/EmailEditor'
 import { useApiMutation, useBrands } from '../hooks'
 import { fmtDate } from '../labels'
@@ -194,24 +195,6 @@ export default function Campaigns() {
   )
 }
 
-function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
-  return (
-    <Card withBorder padding="sm">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text fw={700} size="xl">
-        {value}
-      </Text>
-      {hint && (
-        <Text size="xs" c="dimmed">
-          {hint}
-        </Text>
-      )}
-    </Card>
-  )
-}
-
 interface Recipient {
   id: number
   contact_id: number | null
@@ -248,12 +231,12 @@ function Report({ c }: { c: Campaign }) {
         </Card>
       )}
       <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }}>
-        <Stat label="Sent" value={s.sent} hint={s.queued ? `${s.queued} queued` : undefined} />
-        <Stat label="Opened" value={`${s.open_rate}%`} hint={`${s.opened} people`} />
-        <Stat label="Clicked" value={`${s.click_rate}%`} hint={`${s.clicked} people`} />
-        <Stat label="Unsubscribed" value={s.unsubscribed} />
-        <Stat label="Failed" value={s.failed} />
-        <Stat label="Skipped" value={s.skipped} hint="no email, opted out, no consent" />
+        <Stat label="Sent" value={s.sent} hint={s.queued ? `${s.queued} queued` : undefined} info="Emails accepted by the mail server. Queued: waiting for the next batch (sending stays under the per-minute limit, CRM_BULK_RATE_PER_MINUTE)." />
+        <Stat label="Opened" value={`${s.open_rate}%`} hint={`${s.opened} people`} info="Recipients who opened ÷ emails sent. Counted with a tracking image, so approximate." />
+        <Stat label="Clicked" value={`${s.click_rate}%`} hint={`${s.clicked} people`} info="Recipients who clicked at least one link ÷ emails sent." />
+        <Stat label="Unsubscribed" value={s.unsubscribed} info="Recipients who used this campaign's unsubscribe link." />
+        <Stat label="Failed" value={s.failed} info="Emails the mail server refused. The recipient list shows each reason." />
+        <Stat label="Skipped" value={s.skipped} hint="no email, opted out, no consent" info="Contacts in the lists or audiences that were not emailed: no address, unsubscribed, or no marketing consent when the campaign requires it." />
       </SimpleGrid>
       <Text size="xs" c="dimmed">
         Opens are approximate: many mail apps block or pre-load images. Clicks are reliable.

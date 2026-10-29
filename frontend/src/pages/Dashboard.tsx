@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader } from '../components/common'
+import { InfoTip, Stat } from '../components/ui'
 import { LicenceCharts } from '../components/LicenceCharts'
 import { useBrands } from '../hooks'
 import { fmtDate, money } from '../labels'
@@ -25,24 +26,6 @@ interface Summary {
   by_brand: (Row & { brand: string })[]
   closing_soon: { id: number; title: string; amount: string; currency: string; expected_close_date: string; stage: string }[]
   my_tasks: { id: number; subject: string; due_at: string | null; contact_id: number | null; account_id: number | null; opportunity_id: number | null }[]
-}
-
-function Stat({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  return (
-    <Card withBorder>
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text fw={700} size="xl" mt={4} component="div">
-        {children}
-      </Text>
-      {hint && (
-        <Text size="xs" c="dimmed">
-          {hint}
-        </Text>
-      )}
-    </Card>
-  )
 }
 
 const multi = (rows: { currency: string; amount?: string; total?: string }[], field: 'amount' | 'total' = 'amount') =>
@@ -99,41 +82,44 @@ export default function Dashboard() {
       {s && (
         <Stack>
           <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }}>
-            <Stat label="Open pipeline" hint={`${s.open_count} open opportunities`}>
+            <Stat label="Open pipeline" hint={`${s.open_count} open opportunities`} info="Total contract value of every opportunity not yet won or lost. Currencies are never added together: each one is listed.">
               {multi(s.pipeline, 'total')}
             </Stat>
-            <Stat label="Weighted pipeline" hint="Value × stage probability">
+            <Stat label="Weighted pipeline" hint="Value × stage probability" info="Each open deal's value × its win probability (the deal's own when set, otherwise its stage's): what the pipeline is likely to bring.">
               {s.pipeline.length ? s.pipeline.map((p) => money(p.weighted, p.currency)).join(' + ') : money(0)}
             </Stat>
-            <Stat label="Won this quarter" hint={`${s.won_this_quarter.reduce((a, r) => a + r.count, 0)} deals`}>
+            <Stat label="Won this quarter" hint={`${s.won_this_quarter.reduce((a, r) => a + r.count, 0)} deals`} info="Value of the deals moved to Won since the start of this calendar quarter.">
               {multi(s.won_this_quarter)}
             </Stat>
-            <Stat label="Win rate (12 months)" hint={`${s.new_leads_30d} new leads in 30 days`}>
+            <Stat label="Win rate (12 months)" hint={`${s.new_leads_30d} new leads in 30 days`} info="Deals won ÷ deals won or lost, for deals closed in the last 12 months. The second line counts contacts added as leads in the last 30 days.">
               {s.win_rate_12m}%
             </Stat>
           </SimpleGrid>
           <Grid>
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Card withBorder h="100%">
-                <Title order={5} mb="sm">
-                  Open pipeline by stage
-                </Title>
+                <Group gap={6} mb="sm">
+                  <Title order={5}>Open pipeline by stage</Title>
+                  <InfoTip info="Total value of the open deals in each stage. Hover a bar for the number of deals." />
+                </Group>
                 <BarList rows={s.by_stage.map((r) => ({ label: r.stage, amount: Number(r.amount), currency: r.currency, count: r.count }))} />
               </Card>
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Card withBorder h="100%">
-                <Title order={5} mb="sm">
-                  Open pipeline by referring platform
-                </Title>
+                <Group gap={6} mb="sm">
+                  <Title order={5}>Open pipeline by referring platform</Title>
+                  <InfoTip info="Total value of the open deals each observability platform referred. Direct / none: deals no platform referred." />
+                </Group>
                 <BarList rows={s.by_platform.map((r) => ({ label: r.platform, amount: Number(r.amount), currency: r.currency, count: r.count }))} />
               </Card>
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 7 }}>
               <Card withBorder h="100%">
-                <Title order={5} mb="sm">
-                  Closing in the next 30 days
-                </Title>
+                <Group gap={6} mb="sm">
+                  <Title order={5}>Closing in the next 30 days</Title>
+                  <InfoTip info="Open deals whose expected close date is in the next 30 days or already past: the 10 earliest." />
+                </Group>
                 {s.closing_soon.length ? (
                   <Table>
                     <Table.Tbody>

@@ -30,6 +30,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { PageHeader, Pager, UserPicker } from '../components/common'
+import { Stat } from '../components/ui'
 import { useApiMutation, useBrands } from '../hooks'
 import { ACCOUNT_TYPES, CONTACT_ROLES, fmtDate, LEAD_SOURCES, LIFECYCLES, toOptions } from '../labels'
 import { useLists } from './MailingLists'
@@ -83,24 +84,6 @@ export const useAudiences = () => useQuery({ queryKey: ['audiences'], queryFn: (
 
 const LICENCES = { active: 'Has an active licence', lapsed: 'Licences lapsed (none active)', none: 'Never had a licence' }
 const n = (v: number) => v.toLocaleString('en-US')
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <Card withBorder padding="md">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text size="xl" fw={700} mt={4}>
-        {value}
-      </Text>
-      {hint && (
-        <Text size="xs" c="dimmed">
-          {hint}
-        </Text>
-      )}
-    </Card>
-  )
-}
 
 /** Marketing home: who can be reached, and how recent campaigns did. */
 export default function MarketingOverview() {
@@ -169,19 +152,19 @@ export default function MarketingOverview() {
             Reach
           </Title>
           <SimpleGrid cols={{ base: 2, md: 4 }} mb="md">
-            <Stat label="Contacts with email" value={n(data.contacts.with_email)} />
-            <Stat label="Can be emailed" value={n(data.contacts.reachable)} hint="not unsubscribed" />
-            <Stat label="With marketing consent" value={n(data.contacts.with_consent)} hint="needed for newsletters" />
-            <Stat label="Unsubscribed" value={n(data.contacts.unsubscribed)} hint={`${n(data.new_subscriptions)} new list subscriptions in ${data.days} days`} />
+            <Stat label="Contacts with email" value={n(data.contacts.with_email)} info="Contacts that have an email address." />
+            <Stat label="Can be emailed" value={n(data.contacts.reachable)} hint="not unsubscribed" info="Contacts with an email address who have not unsubscribed. Campaigns can reach them." />
+            <Stat label="With marketing consent" value={n(data.contacts.with_consent)} hint="needed for newsletters" info="Contacts who opted in to marketing email and have not unsubscribed. Campaigns set to require consent only go to them." />
+            <Stat label="Unsubscribed" value={n(data.contacts.unsubscribed)} hint={`${n(data.new_subscriptions)} new list subscriptions in ${data.days} days`} info="Contacts who unsubscribed from all marketing email. They are never emailed by a campaign." />
           </SimpleGrid>
           <Title order={5} mb="xs">
             Last {data.days} days
           </Title>
           <SimpleGrid cols={{ base: 2, md: 4 }} mb="md">
-            <Stat label="Emails delivered" value={n(e.sent)} hint={e.failed ? `${n(e.failed)} failed` : undefined} />
-            <Stat label="Open rate" value={`${e.open_rate}%`} hint={`${n(e.opened)} opened`} />
-            <Stat label="Click rate" value={`${e.click_rate}%`} hint={`${n(e.clicked)} clicked`} />
-            <Stat label="Unsubscribe rate" value={`${e.unsubscribe_rate}%`} hint={`${n(e.unsubscribed)} unsubscribed`} />
+            <Stat label="Emails delivered" value={n(e.sent)} hint={e.failed ? `${n(e.failed)} failed` : undefined} info="Campaign emails accepted by the mail server in the period. Failed: refused by the server." />
+            <Stat label="Open rate" value={`${e.open_rate}%`} hint={`${n(e.opened)} opened`} info="Recipients who opened ÷ emails delivered. Opens are counted with a tracking image, so mail apps that block images (and privacy features that load them all) make it approximate." />
+            <Stat label="Click rate" value={`${e.click_rate}%`} hint={`${n(e.clicked)} clicked`} info="Recipients who clicked at least one link ÷ emails delivered." />
+            <Stat label="Unsubscribe rate" value={`${e.unsubscribe_rate}%`} hint={`${n(e.unsubscribed)} unsubscribed`} info="Recipients who used the unsubscribe link ÷ emails delivered." />
           </SimpleGrid>
           <Card withBorder>
             <Group justify="space-between" mb="xs">
@@ -481,9 +464,9 @@ export function AudienceDetail() {
       )}
       {a.counts && (
         <SimpleGrid cols={{ base: 1, xs: 3 }} mb="md">
-          <Stat label="Matching today" value={n(a.counts.matching)} />
-          <Stat label="Can be emailed" value={n(a.counts.reachable)} hint="not unsubscribed" />
-          <Stat label="With marketing consent" value={n(a.counts.with_consent)} />
+          <Stat label="Matching today" value={n(a.counts.matching)} info="Contacts that match the rules now. The audience is worked out again each time a campaign uses it." />
+          <Stat label="Can be emailed" value={n(a.counts.reachable)} hint="not unsubscribed" info="Matching contacts with an email address who have not unsubscribed." />
+          <Stat label="With marketing consent" value={n(a.counts.with_consent)} info="Matching contacts who opted in to marketing email: who a campaign that requires consent reaches." />
         </SimpleGrid>
       )}
       <Card withBorder p={0}>

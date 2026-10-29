@@ -1,92 +1,16 @@
 import { BarChart } from '@mantine/charts'
-import { Alert, Anchor, Badge, Card, Group, NumberInput, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core'
+import { Alert, Anchor, Badge, Card, Group, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { PageHeader } from '../components/common'
+import { DataTable, InfoTip, Stat } from '../components/ui'
 import { fmtDate, money } from '../labels'
 
 const usd = (v: string | number) => money(Number(v), 'USD')
 const num = (v: string | number) => Number(v)
 const SERIES = { light: '#2a78d6', dark: '#3987e5' }
-
-function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: ReactNode; tone?: string }) {
-  return (
-    <Card withBorder padding="sm">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text fw={700} size="xl" c={tone}>
-        {value}
-      </Text>
-      {hint && (
-        <Text size="xs" c="dimmed">
-          {hint}
-        </Text>
-      )}
-    </Card>
-  )
-}
-
-/** A simple sortable table: click a header to sort by it. */
-function DataTable<T>({ rows, cols, initial, maxHeight = 560, empty = 'Nothing to show.' }: {
-  rows: T[]
-  cols: { key: string; label: string; render: (r: T) => ReactNode; sort?: (r: T) => number | string; align?: 'right' }[]
-  initial?: string
-  maxHeight?: number
-  empty?: string
-}) {
-  const [sort, setSort] = useState<{ key: string; desc: boolean } | null>(initial ? { key: initial, desc: true } : null)
-  const sorted = useMemo(() => {
-    const col = cols.find((c) => c.key === sort?.key)
-    if (!col?.sort) return rows
-    const f = col.sort
-    return [...rows].sort((a, b) => {
-      const x = f(a), y = f(b)
-      const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))
-      return sort!.desc ? -c : c
-    })
-  }, [rows, cols, sort])
-  if (!rows.length)
-    return (
-      <Text size="sm" c="dimmed">
-        {empty}
-      </Text>
-    )
-  return (
-    <ScrollArea.Autosize mah={maxHeight} type="auto" offsetScrollbars>
-      <Table miw={760} fz="sm" verticalSpacing={6} stickyHeader highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            {cols.map((c) => (
-              <Table.Th
-                key={c.key}
-                ta={c.align}
-                style={{ cursor: c.sort ? 'pointer' : undefined, whiteSpace: 'nowrap' }}
-                onClick={() => c.sort && setSort({ key: c.key, desc: sort?.key === c.key ? !sort.desc : true })}
-              >
-                {c.label}
-                {sort?.key === c.key ? (sort.desc ? ' ↓' : ' ↑') : ''}
-              </Table.Th>
-            ))}
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {sorted.map((r, i) => (
-            <Table.Tr key={i}>
-              {cols.map((c) => (
-                <Table.Td key={c.key} ta={c.align}>
-                  {c.render(r)}
-                </Table.Td>
-              ))}
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </ScrollArea.Autosize>
-  )
-}
 
 const AccountLink = ({ id, name }: { id: number; name: string }) => (
   <Anchor component={Link} to={`/accounts/${id}?tab=licences`} size="sm">
@@ -129,10 +53,10 @@ function RenewalsTab() {
         <SegmentedControl size="xs" value={only} onChange={setOnly} data={[{ value: 'all', label: 'All' }, { value: 'flagged', label: 'Needs action' }]} />
       </Group>
       <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <Stat label="Up for renewal" value={data.length} hint="licences (instalments excluded)" />
-        <Stat label="Annual value" value={usd(total)} hint="at the current price" />
-        <Stat label="No renewal deal yet" value={atRisk.length} hint={usd(atRisk.reduce((n, r) => n + num(r.annual_value), 0))} tone={atRisk.length ? 'orange' : undefined} />
-        <Stat label="No activity in 90 days" value={data.filter((r) => r.flags.includes('no activity in 90 days')).length} />
+        <Stat label="Up for renewal" value={data.length} hint="licences (instalments excluded)" info="Active licences whose paid period ends within the chosen number of months. Licences paid in instalments are left out: they renew on their own." />
+        <Stat label="Annual value" value={usd(total)} hint="at the current price" info="For each licence, the net amount of the paid period that ends on its renewal date, scaled to 12 months." />
+        <Stat label="No renewal deal yet" value={atRisk.length} hint={usd(atRisk.reduce((n, r) => n + num(r.annual_value), 0))} tone={atRisk.length ? 'orange' : undefined} info="Licences of accounts that have no open renewal opportunity. The amount is their annual value." />
+        <Stat label="No activity in 90 days" value={data.filter((r) => r.flags.includes('no activity in 90 days')).length} info="Licences of accounts with nothing logged on their timeline (call, email, meeting, note, task) in the last 90 days." />
       </SimpleGrid>
       <Card withBorder>
         <DataTable
@@ -142,13 +66,14 @@ function RenewalsTab() {
           cols={[
             { key: 'account', label: 'Customer', render: (r) => <AccountLink id={r.account_id} name={r.account} />, sort: (r) => r.account },
             { key: 'product', label: 'Product', render: (r) => <Text size="sm">{r.product}</Text>, sort: (r) => r.product },
-            { key: 'date', label: 'Renews', render: (r) => <Text size="sm" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.renewal_date)} <Text span size="xs" c="dimmed">({r.days} d)</Text></Text>, sort: (r) => -r.days },
-            { key: 'value', label: 'Annual value', align: 'right', render: (r) => usd(r.annual_value), sort: (r) => num(r.annual_value) },
-            { key: 'reseller', label: 'Via', render: (r) => <Text size="xs">{r.reseller}</Text>, sort: (r) => r.reseller },
+            { key: 'date', label: 'Renews', info: 'End of the paid period, and the days left until then.', render: (r) => <Text size="sm" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.renewal_date)} <Text span size="xs" c="dimmed">({r.days} d)</Text></Text>, sort: (r) => -r.days },
+            { key: 'value', label: 'Annual value', info: 'The last paid period scaled to 12 months.', align: 'right', render: (r) => usd(r.annual_value), sort: (r) => num(r.annual_value) },
+            { key: 'reseller', label: 'Via', info: 'The reseller that bills the customer, from the MarketZone reports.', render: (r) => <Text size="xs">{r.reseller}</Text>, sort: (r) => r.reseller },
             { key: 'owner', label: 'Owner', render: (r) => r.owner ?? <Text size="xs" c="dimmed">—</Text>, sort: (r) => r.owner ?? '' },
             {
               key: 'flags',
               label: 'To do',
+              info: 'No renewal deal: open a renewal opportunity. No activity in 90 days: get in touch. No owner: assign the account.',
               render: (r) => (
                 <Group gap={4}>
                   {r.flags.map((f) => (
@@ -195,6 +120,12 @@ interface Breakdown {
 }
 
 const MOVE_COLOR: Record<string, string> = { expanded: 'teal', retained: 'gray', contracted: 'orange', churned: 'red' }
+const MOVE_INFO: Record<string, string> = {
+  retained: 'Customers paying within 5% of last year. Customers and the change in revenue.',
+  expanded: 'Customers paying more than 5% above last year. Customers and the revenue gained.',
+  contracted: 'Customers paying more than 5% below last year, but still paying. Customers and the revenue lost.',
+  churned: 'Customers who stopped paying. Customers and the revenue lost.',
+}
 
 function RetentionTab() {
   const thisYear = new Date().getFullYear()
@@ -222,21 +153,26 @@ function RetentionTab() {
         </Text>
       )}
       <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <Stat label="Net revenue retention" value={data.nrr !== null ? `${data.nrr}%` : '—'} hint={`${usd(data.retained_revenue)} of ${usd(data.start_revenue)}`} />
-        <Stat label="Gross revenue retention" value={data.grr !== null ? `${data.grr}%` : '—'} hint="without expansion" />
-        <Stat label="Churned customers" value={mv.churned?.customers ?? 0} hint={usd(mv.churned?.before ?? 0)} tone={mv.churned?.customers ? 'red' : undefined} />
-        <Stat label="New customers" value={data.new_customers} hint={usd(data.new_revenue)} />
+        <Stat label="Net revenue retention" value={data.nrr !== null ? `${data.nrr}%` : '—'} hint={`${usd(data.retained_revenue)} of ${usd(data.start_revenue)}`} info={`What ${data.previous_year} customers pay for ${data.year}, divided by what they paid for ${data.previous_year}. Counts upsell, downgrades and churn; new customers are left out. Above 100% means the existing base grew.`} />
+        <Stat label="Gross revenue retention" value={data.grr !== null ? `${data.grr}%` : '—'} hint="without expansion" info={`Like net retention, but no customer counts for more than they paid for ${data.previous_year}: only losses (downgrades and churn) show. 100% means no revenue was lost.`} />
+        <Stat label="Churned customers" value={mv.churned?.customers ?? 0} hint={usd(mv.churned?.before ?? 0)} tone={mv.churned?.customers ? 'red' : undefined} info={`Customers who paid for ${data.previous_year} and nothing for ${data.year}. The amount is what they paid for ${data.previous_year}.`} />
+        <Stat label="New customers" value={data.new_customers} hint={usd(data.new_revenue)} info={`Customers who pay for ${data.year} and paid nothing for ${data.previous_year}, with their ${data.year} revenue.`} />
       </SimpleGrid>
       <Group gap="xs">
         {data.movement.map((m) => (
-          <Badge key={m.kind} variant="light" color={MOVE_COLOR[m.kind]} size="lg" tt="none">
-            {m.kind}: {m.customers} · {usd(num(m.after) - num(m.before))}
-          </Badge>
+          <Tooltip key={m.kind} label={MOVE_INFO[m.kind]} multiline w={260} withArrow>
+            <Badge variant="light" color={MOVE_COLOR[m.kind]} size="lg" tt="none">
+              {m.kind}: {m.customers} · {usd(num(m.after) - num(m.before))}
+            </Badge>
+          </Tooltip>
         ))}
       </Group>
       <Card withBorder>
         <Group justify="space-between" mb="xs">
-          <Title order={5}>Where revenue is kept or lost</Title>
+          <Group gap={6}>
+            <Title order={5}>Where revenue is kept or lost</Title>
+            <InfoTip info="Last year's customers grouped by region, product family or reseller: what they paid last year, what the same customers pay this year, and the revenue of those who stopped." />
+          </Group>
           <SegmentedControl size="xs" value={dim} onChange={setDim} data={[{ value: 'region', label: 'Region' }, { value: 'product', label: 'Product family' }, { value: 'reseller', label: 'Reseller' }]} />
         </Group>
         <DataTable
@@ -246,9 +182,9 @@ function RetentionTab() {
           cols={[
             { key: 'name', label: dim === 'region' ? 'Region' : dim === 'product' ? 'Product family' : 'Reseller', render: (r) => r.name, sort: (r) => r.name },
             { key: 'before', label: String(data.previous_year), align: 'right', render: (r) => usd(r.before), sort: (r) => num(r.before) },
-            { key: 'after', label: `Same customers, ${data.year}`, align: 'right', render: (r) => usd(r.after), sort: (r) => num(r.after) },
-            { key: 'nrr', label: 'NRR', align: 'right', render: (r) => (r.nrr === null ? '—' : <Text size="sm" c={r.nrr < 90 ? 'red' : undefined} fw={r.nrr < 90 ? 600 : undefined}>{r.nrr}%</Text>), sort: (r) => r.nrr ?? 0 },
-            { key: 'churned', label: 'Lost (churn)', align: 'right', render: (r) => usd(r.churned), sort: (r) => num(r.churned) },
+            { key: 'after', label: `Same customers, ${data.year}`, info: 'New customers are not included.', align: 'right', render: (r) => usd(r.after), sort: (r) => num(r.after) },
+            { key: 'nrr', label: 'NRR', info: 'Net revenue retention of the group. Below 90% shows in red.', align: 'right', render: (r) => (r.nrr === null ? '—' : <Text size="sm" c={r.nrr < 90 ? 'red' : undefined} fw={r.nrr < 90 ? 600 : undefined}>{r.nrr}%</Text>), sort: (r) => r.nrr ?? 0 },
+            { key: 'churned', label: 'Lost (churn)', info: 'Last year\'s revenue of customers who pay nothing this year.', align: 'right', render: (r) => usd(r.churned), sort: (r) => num(r.churned) },
           ]}
         />
       </Card>
@@ -261,7 +197,7 @@ function RetentionTab() {
           maxHeight={420}
           cols={[
             { key: 'account', label: 'Customer', render: (r) => <AccountLink id={r.account_id} name={r.account} />, sort: (r) => r.account },
-            { key: 'status', label: 'Movement', render: (r) => <Badge size="sm" variant="light" color={MOVE_COLOR[r.status]}>{r.status}</Badge>, sort: (r) => r.status },
+            { key: 'status', label: 'Movement', info: 'Retained (±5%), expanded (above +5%), contracted (below −5%) or churned (nothing this year).', render: (r) => <Badge size="sm" variant="light" color={MOVE_COLOR[r.status]}>{r.status}</Badge>, sort: (r) => r.status },
             { key: 'before', label: String(data.previous_year), align: 'right', render: (r) => usd(r.before), sort: (r) => num(r.before) },
             { key: 'after', label: String(data.year), align: 'right', render: (r) => usd(r.after), sort: (r) => num(r.after) },
             { key: 'change', label: 'Change', align: 'right', render: (r) => <Text size="sm" c={num(r.change) < 0 ? 'red' : 'teal'}>{usd(r.change)}</Text>, sort: (r) => num(r.change) },
@@ -300,9 +236,9 @@ function ResellersTab() {
   return (
     <Stack>
       <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <Stat label="Resellers" value={data.filter((r) => r.reseller !== 'Direct (no reseller)').length} hint="billing companies in the reports" />
-        <Stat label="Gone quiet" value={quiet.length} hint="no invoice in 6 months" tone={quiet.length ? 'orange' : undefined} />
-        <Stat label="With lapsed licences" value={data.filter((r) => r.lapsed > 0).length} />
+        <Stat label="Resellers" value={data.filter((r) => r.reseller !== 'Direct (no reseller)').length} hint="billing companies in the reports" info="Companies that bill customers in the BMC MarketZone reports, not counting direct sales." />
+        <Stat label="Gone quiet" value={quiet.length} hint="no invoice in 6 months" tone={quiet.length ? 'orange' : undefined} info="Resellers that invoiced in the past but nothing in the last 6 months." />
+        <Stat label="With lapsed licences" value={data.filter((r) => r.lapsed > 0).length} info="Resellers with at least one licence that ended without being renewed and is not marked as resolved." />
         <Stat
           label="Renewal rate (all)"
           value={(() => {
@@ -310,6 +246,7 @@ function ResellersTab() {
             return due ? `${Math.round((100 * data.reduce((n, r) => n + r.renewed, 0)) / due)}%` : '—'
           })()}
           hint="paid periods ended in 12 months that were renewed"
+          info="Licence periods that ended in the last 12 months and were followed by a later paid period, across all resellers."
         />
       </SimpleGrid>
       <Card withBorder>
@@ -318,13 +255,14 @@ function ResellersTab() {
           initial="rev"
           cols={[
             { key: 'name', label: 'Reseller', render: (r) => <Group gap={6} wrap="nowrap"><Text size="sm">{r.reseller}</Text>{r.quiet && <Badge size="xs" color="orange" variant="light">quiet</Badge>}</Group>, sort: (r) => r.reseller },
-            { key: 'rev', label: 'Revenue 12 m', align: 'right', render: (r) => usd(r.revenue_12m), sort: (r) => num(r.revenue_12m) },
-            { key: 'growth', label: 'vs prior 12 m', align: 'right', render: (r) => (r.new ? <Badge size="xs" variant="light">new</Badge> : r.growth === null ? '—' : <Text size="sm" c={r.growth < 0 ? 'red' : 'teal'}>{r.growth > 0 ? '+' : ''}{r.growth}%</Text>), sort: (r) => r.growth ?? -1e9 },
-            { key: 'cust', label: 'Customers', align: 'right', render: (r) => r.active_customers, sort: (r) => r.active_customers },
-            { key: 'avg', label: 'Avg invoice', align: 'right', render: (r) => usd(r.avg_invoice), sort: (r) => num(r.avg_invoice) },
+            { key: 'rev', label: 'Revenue 12 m', info: 'Net invoiced in the last 12 months.', align: 'right', render: (r) => usd(r.revenue_12m), sort: (r) => num(r.revenue_12m) },
+            { key: 'growth', label: 'vs prior 12 m', info: 'Change against the 12 months before. "new" when that earlier revenue is under 10% of this year\'s.', align: 'right', render: (r) => (r.new ? <Badge size="xs" variant="light">new</Badge> : r.growth === null ? '—' : <Text size="sm" c={r.growth < 0 ? 'red' : 'teal'}>{r.growth > 0 ? '+' : ''}{r.growth}%</Text>), sort: (r) => r.growth ?? -1e9 },
+            { key: 'cust', label: 'Customers', info: 'Customers invoiced through this reseller.', align: 'right', render: (r) => r.active_customers, sort: (r) => r.active_customers },
+            { key: 'avg', label: 'Avg invoice', info: 'Average net amount of its invoices.', align: 'right', render: (r) => usd(r.avg_invoice), sort: (r) => num(r.avg_invoice) },
             {
               key: 'renew',
               label: 'Renewal rate',
+              info: 'Licence periods ended in the last 12 months that were renewed. Below 60% shows in red; hover a value for the counts.',
               align: 'right',
               render: (r) =>
                 r.renewal_rate === null ? (
@@ -338,8 +276,8 @@ function ResellersTab() {
                 ),
               sort: (r) => r.renewal_rate ?? -1,
             },
-            { key: 'lapsed', label: 'Lapsed', align: 'right', render: (r) => (r.lapsed ? <Text size="sm" c="red">{r.lapsed}</Text> : 0), sort: (r) => r.lapsed },
-            { key: 'credits', label: 'Credited', align: 'right', render: (r) => (num(r.credits) ? usd(r.credits) : '—'), sort: (r) => num(r.credits) },
+            { key: 'lapsed', label: 'Lapsed', info: 'Licences that ended without renewal and are not resolved.', align: 'right', render: (r) => (r.lapsed ? <Text size="sm" c="red">{r.lapsed}</Text> : 0), sort: (r) => r.lapsed },
+            { key: 'credits', label: 'Credited', info: 'Credit memos issued through this reseller.', align: 'right', render: (r) => (num(r.credits) ? usd(r.credits) : '—'), sort: (r) => num(r.credits) },
             { key: 'last', label: 'Last invoice', render: (r) => fmtDate(r.last_invoice), sort: (r) => r.last_invoice ?? '' },
           ]}
         />
@@ -368,10 +306,10 @@ function CreditsTab() {
   return (
     <Stack>
       <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <Stat label="Credited" value={usd(data.total_credited)} hint={`${data.share ?? 0}% of ${usd(data.total_invoiced)} invoiced`} />
-        <Stat label="Credit memo lines" value={data.lines.length} />
-        <Stat label="Customers credited" value={data.by_customer.length} />
-        <Stat label="Credited and re-billed" value={data.rebilled.length} hint="licences credited 2+ times" tone={data.rebilled.length ? 'orange' : undefined} />
+        <Stat label="Credited" value={usd(data.total_credited)} hint={`${data.share ?? 0}% of ${usd(data.total_invoiced)} invoiced`} info="Total of the credit memo lines (negative amounts) in the MarketZone reports, and their share of everything invoiced." />
+        <Stat label="Credit memo lines" value={data.lines.length} info="Report lines with a negative amount." />
+        <Stat label="Customers credited" value={data.by_customer.length} info="Customers with at least one credit memo line." />
+        <Stat label="Credited and re-billed" value={data.rebilled.length} hint="licences credited 2+ times" tone={data.rebilled.length ? 'orange' : undefined} info="Licences credited twice or more, or credited once and invoiced three times or more: often a billing correction loop worth checking with the reseller." />
       </SimpleGrid>
       <Card withBorder>
         <Title order={5}>Credited per quarter</Title>
@@ -485,9 +423,9 @@ function WhitespaceTab() {
         <Select size="xs" w={280} clearable placeholder="All families" value={fam} onChange={setFam} data={data.families.map((f) => f.family)} />
       </Group>
       <SimpleGrid cols={{ base: 1, md: 3 }}>
-        <Stat label="Customers with a suggestion" value={rows.length} />
-        <Stat label="Suggestions" value={rows.reduce((n, s) => n + s.suggest.length, 0)} />
-        <Stat label="Strongest pattern" value={data.rules[0] ? `${data.rules[0].confidence}%` : '—'} hint={data.rules[0] ? `${data.rules[0].has} → ${data.rules[0].suggest}` : undefined} />
+        <Stat label="Customers with a suggestion" value={rows.length} info="Customers who own a product family but not one that most owners of that family also have." />
+        <Stat label="Suggestions" value={rows.reduce((n, s) => n + s.suggest.length, 0)} info="Product families to propose, across those customers." />
+        <Stat label="Strongest pattern" value={data.rules[0] ? `${data.rules[0].confidence}%` : '—'} hint={data.rules[0] ? `${data.rules[0].has} → ${data.rules[0].suggest}` : undefined} info="The pair of product families most often owned together: the share of owners of the first who also own the second (at least 3 customers)." />
       </SimpleGrid>
       <Card withBorder>
         <Title order={5} mb="xs">
@@ -501,6 +439,7 @@ function WhitespaceTab() {
             {
               key: 's',
               label: 'Suggest',
+              info: 'Families to propose. Hover one to see which product it follows from and how often.',
               render: (r) => (
                 <Group gap={4}>
                   {r.suggest.map((s) => (
@@ -530,8 +469,8 @@ function WhitespaceTab() {
           cols={[
             { key: 'h', label: 'Customers who own', render: (r) => r.has, sort: (r) => r.has },
             { key: 's', label: 'also own', render: (r) => r.suggest, sort: (r) => r.suggest },
-            { key: 'c', label: 'How often', align: 'right', render: (r) => `${r.confidence}%`, sort: (r) => r.confidence },
-            { key: 'n', label: 'Customers', align: 'right', render: (r) => r.support, sort: (r) => r.support },
+            { key: 'c', label: 'How often', info: 'Share of the customers who own the first family that also own the second.', align: 'right', render: (r) => `${r.confidence}%`, sort: (r) => r.confidence },
+            { key: 'n', label: 'Customers', info: 'Customers who own both families.', align: 'right', render: (r) => r.support, sort: (r) => r.support },
           ]}
         />
       </Card>

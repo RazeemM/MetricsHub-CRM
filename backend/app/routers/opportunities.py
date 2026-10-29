@@ -2,12 +2,14 @@ import datetime as dt
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from ..crud import apply_changes, audit, get_or_404, paginate
 from ..db import get_db
-from ..models import Account, Contact, Opportunity, Pipeline, PriceBook, PriceBookEntry, Product, Stage, StageHistory, User
+from ..models import (
+    Account, Brand, Contact, Opportunity, Pipeline, PriceBook, PriceBookEntry, Product, Stage, StageHistory, User,
+)
 from ..pricing import compute_totals
 from ..schemas import (
     OpportunityCreate,
@@ -39,8 +41,8 @@ LOAD = (
     selectinload(Opportunity.reseller), selectinload(Opportunity.partner_contact),
     selectinload(Opportunity.primary_contact), selectinload(Opportunity.line_items),
 )
-SORTS = {"title": Opportunity.title, "amount": Opportunity.amount_tcv, "close": Opportunity.expected_close_date,
-         "created_at": Opportunity.created_at, "updated_at": Opportunity.updated_at}
+SORT_KEYS = ("title", "account", "brand", "stage", "platform", "amount", "arr", "weighted", "close", "owner",
+             "created_at", "updated_at")
 
 
 def _load(db: Session, opp_id: int) -> Opportunity:
@@ -50,56 +52,117 @@ def _load(db: Session, opp_id: int) -> Opportunity:
     return opp
 
 
+def _many(value) -> list:
+    """A filter given once or several times (?brand_id=1&brand_id=2)."""
+    if value is None or value == "":
+        return []
+    return [v for v in (value if isinstance(value, list) else [value]) if v not in (None, "")]
+
+
 def build_query(q=None, pipeline_id=None, stage_id=None, brand_id=None, owner_id=None, account_id=None,
-                referring_platform_id=None, status=None, lead_source=None):
+                referring_platform_id=None, status=None, lead_source=None, deal_type=None, route_to_market=None,
+                close_from: dt.date | None = None, close_to: dt.date | None = None,
+                min_amount: Decimal | None = None, max_amount: Decimal | None = None, no_close_date: bool = False):
+    """Brand, owner, platform, lead source, deal type and route accept one value or a list (any of them)."""
     stmt = select(Opportunity).options(*LOAD).join(Stage, Opportunity.stage_id == Stage.id)
     if q:
         term = f"%{q.strip()}%"
-        stmt = stmt.join(Account, Opportunity.account_id == Account.id).where(
-            or_(Opportunity.title.ilike(term), Account.name.ilike(term)))
+        named = aliased(Account)
+        stmt = stmt.join(named, Opportunity.account_id == named.id).where(
+            or_(Opportunity.title.ilike(term), named.name.ilike(term)))
     for col, val in ((Opportunity.pipeline_id, pipeline_id), (Opportunity.stage_id, stage_id),
-                     (Opportunity.brand_id, brand_id), (Opportunity.owner_id, owner_id),
-                     (Opportunity.account_id, account_id),
-                     (Opportunity.referring_platform_id, referring_platform_id),
-                     (Opportunity.lead_source, lead_source)):
+                     (Opportunity.account_id, account_id)):
         if val:
             stmt = stmt.where(col == val)
+    for col, val in ((Opportunity.brand_id, brand_id), (Opportunity.owner_id, owner_id),
+                     (Opportunity.referring_platform_id, referring_platform_id),
+                     (Opportunity.lead_source, lead_source), (Opportunity.deal_type, deal_type),
+                     (Opportunity.route_to_market, route_to_market)):
+        if values := _many(val):
+            stmt = stmt.where(col.in_(values))
     if status in ("open", "won", "lost"):
         stmt = stmt.where(Stage.kind == status)
+    if close_from:
+        stmt = stmt.where(Opportunity.expected_close_date >= close_from)
+    if close_to:
+        stmt = stmt.where(Opportunity.expected_close_date <= close_to)
+    if no_close_date:
+        stmt = stmt.where(Opportunity.expected_close_date.is_(None))
+    if min_amount is not None:
+        stmt = stmt.where(Opportunity.amount_tcv >= min_amount)
+    if max_amount is not None:
+        stmt = stmt.where(Opportunity.amount_tcv <= max_amount)
     return stmt
+
+
+def order(stmt, sort: str, desc: bool):
+    """Sort by a column of the list. Joins what it needs under aliases, so it combines with any filter."""
+    if sort in ("account", "platform"):
+        a = aliased(Account)
+        fk = Opportunity.account_id if sort == "account" else Opportunity.referring_platform_id
+        stmt, col = stmt.outerjoin(a, fk == a.id), func.lower(a.name)
+    elif sort == "brand":
+        b = aliased(Brand)
+        stmt, col = stmt.outerjoin(b, Opportunity.brand_id == b.id), b.name
+    elif sort == "owner":
+        u = aliased(User)
+        stmt, col = stmt.outerjoin(u, Opportunity.owner_id == u.id), func.lower(u.full_name)
+    else:
+        col = {
+            "title": func.lower(Opportunity.title), "stage": Stage.position, "amount": Opportunity.amount_tcv,
+            "arr": Opportunity.amount_arr, "close": Opportunity.expected_close_date,
+            "weighted": Opportunity.amount_tcv * func.coalesce(Opportunity.probability, Stage.probability),
+            "created_at": Opportunity.created_at,
+        }.get(sort, Opportunity.updated_at)
+    return stmt.order_by(col.desc().nulls_last() if desc else col.asc().nulls_last(), Opportunity.id)
 
 
 @router.get("", response_model=Page[OpportunityOut])
 def list_opportunities(
     q: str | None = None, pipeline_id: int | None = None, stage_id: int | None = None,
-    brand_id: int | None = None, owner_id: int | None = None, account_id: int | None = None,
-    referring_platform_id: int | None = None, status: str | None = None, lead_source: str | None = None,
-    sort: str = "updated_at", desc: bool = True,
+    brand_id: list[int] | None = Query(None), owner_id: list[int] | None = Query(None),
+    account_id: int | None = None, referring_platform_id: list[int] | None = Query(None),
+    status: str | None = None, lead_source: list[str] | None = Query(None),
+    deal_type: list[str] | None = Query(None), route_to_market: list[str] | None = Query(None),
+    close_from: dt.date | None = None, close_to: dt.date | None = None,
+    min_amount: Decimal | None = None, max_amount: Decimal | None = None,
+    sort: str = Query("updated_at", description=f"One of: {', '.join(SORT_KEYS)}"), desc: bool = True,
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db), _: User = Depends(get_current_user),
 ):
-    col = SORTS.get(sort, Opportunity.updated_at)
-    stmt = build_query(q, pipeline_id, stage_id, brand_id, owner_id, account_id, referring_platform_id, status,
-                       lead_source).order_by(col.desc().nulls_last() if desc else col.asc().nulls_last(),
-                                             Opportunity.id)
+    stmt = order(build_query(q, pipeline_id, stage_id, brand_id, owner_id, account_id, referring_platform_id, status,
+                             lead_source, deal_type, route_to_market, close_from, close_to, min_amount, max_amount),
+                 sort, desc)
     items, total = paginate(db, stmt, page, page_size)
     return Page(items=items, total=total, page=page, page_size=page_size)
 
 
+# Card order on the board: view setting -> (sort key, descending)
+BOARD_SORTS = {"close": ("close", False), "amount": ("amount", True), "updated": ("updated_at", True),
+               "created": ("created_at", True), "title": ("title", False), "account": ("account", False)}
+
+
 @router.get("/board")
 def board(
-    pipeline_id: int | None = None, brand_id: int | None = None, owner_id: int | None = None,
-    referring_platform_id: int | None = None, q: str | None = None,
+    pipeline_id: int | None = None, brand_id: list[int] | None = Query(None), owner_id: list[int] | None = Query(None),
+    referring_platform_id: list[int] | None = Query(None), q: str | None = None,
+    lead_source: list[str] | None = Query(None), deal_type: list[str] | None = Query(None),
+    route_to_market: list[str] | None = Query(None), close_from: dt.date | None = None, close_to: dt.date | None = None,
+    min_amount: Decimal | None = None, max_amount: Decimal | None = None, no_close_date: bool = False,
+    hide_closed: bool = False, sort: str = Query("close", description=", ".join(BOARD_SORTS)),
     db: Session = Depends(get_db), _: User = Depends(get_current_user),
 ):
+    """The pipeline as columns of cards. The filters are those a saved pipeline view stores (see /api/views)."""
     pipeline = db.get(Pipeline, pipeline_id) if pipeline_id else default_pipeline(db)
     if not pipeline:
         raise HTTPException(404, "Pipeline not found")
-    stmt = build_query(q, pipeline.id, None, brand_id, owner_id, None, referring_platform_id).order_by(
-        Opportunity.expected_close_date.asc().nulls_last(), Opportunity.id)
-    opps = db.scalars(stmt).unique().all()
+    stmt = build_query(q, pipeline.id, None, brand_id, owner_id, None, referring_platform_id, None, lead_source,
+                       deal_type, route_to_market, close_from, close_to, min_amount, max_amount, no_close_date)
+    opps = db.scalars(order(stmt, *BOARD_SORTS.get(sort, BOARD_SORTS["close"]))).unique().all()
     columns = []
     for st in sorted(pipeline.stages, key=lambda s: s.position):
+        if hide_closed and st.kind != "open":
+            continue
         items = [o for o in opps if o.stage_id == st.id]
         columns.append({
             "stage": {"id": st.id, "name": st.name, "probability": st.probability, "kind": st.kind},

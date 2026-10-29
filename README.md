@@ -32,6 +32,8 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
   - **New Business:** New (10%) → Discovery (20%) → Demo (30%) → PoC / Trial (50%) → Proposal / Follow-up (60%) → Negotiation (80%) → Won / Lost.
   - **Renewals:** Upcoming renewal → Renewal pending → Renewed / Churned.
   - The Kanban board supports drag and drop. Marking a deal Lost requires a reason, and stage history is recorded.
+  - **Pipeline views** save the board's filters under a name: owners (or *only my deals*, which follows whoever opens the view), brands, referring platforms, deal type, route to market, lead source, expected close (relative periods such as *This quarter* stay current, or between two dates), value range, hiding the Won and Lost columns, and the card order. A view is private, or shared with every user; only its owner and administrators can change it. *All deals*, *My deals* and *Closing this quarter* are always there. Changes show as removable chips, with **Save view**, **Save as new view** and **Reset**. The board reopens on the last view used. API: `/api/views`.
+  - Click a column header to sort the Opportunities, Accounts, Contacts and Insights tables; click again to reverse. Numbers and dates sort largest or latest first. The (i) icons next to metrics and column headers explain how each figure is calculated.
 - **Products & price books:** a starter catalog for both brands.
   - "MetricsHub Direct USD" contains MetricsHub Enterprise at $15/host/month.
   - "Sentry via BMC (USD)" contains the FY27 BMC list prices for the BHOM and BHCO bundles. These are **internal**: check them before quoting.

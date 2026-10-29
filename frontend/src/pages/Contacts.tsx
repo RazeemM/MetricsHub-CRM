@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { LifecycleBadge, PageHeader, Pager } from '../components/common'
+import { SortTh, type Sort } from '../components/ui'
 import { ContactFormModal } from '../components/forms'
 import { useApiMutation } from '../hooks'
 import { CONTACT_ROLES, fmtDate, LEAD_SOURCES, LIFECYCLES, toOptions } from '../labels'
@@ -23,6 +24,8 @@ export default function Contacts() {
   const [role, setRole] = useState<string[]>([])
   const [source, setSource] = useState<string[]>([])
   const [page, setPage] = useState(1)
+  const [sort, setSort] = useState<Sort>({ key: 'created_at', desc: true })
+  const th = { sort, onSort: (s: Sort) => { setSort(s); setPage(1) } }
   const [debounced] = useDebouncedValue(q, 250)
   const [opened, { open, close }] = useDisclosure()
   // view: all contacts, the members of a list ("list:3") or the contacts matching an audience ("audience:4")
@@ -46,6 +49,8 @@ export default function Contacts() {
     source,
     list_id: kind === 'list' ? viewId : undefined,
     audience_id: kind === 'audience' ? viewId : undefined,
+    sort: sort.key,
+    desc: sort.desc,
     page,
     page_size: 50,
   }
@@ -134,13 +139,13 @@ export default function Contacts() {
                     />
                   </Table.Th>
                 )}
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Email</Table.Th>
-                <Table.Th>Account</Table.Th>
-                <Table.Th>Role</Table.Th>
-                <Table.Th>Lifecycle</Table.Th>
-                <Table.Th>Source</Table.Th>
-                <Table.Th>Created</Table.Th>
+                <SortTh label="Name" sortKey="name" {...th} />
+                <SortTh label="Email" sortKey="email" {...th} />
+                <SortTh label="Account" sortKey="account" {...th} />
+                <SortTh label="Role" sortKey="role" {...th} info="Customer contact, platform account manager (Datadog, BMC…), partner contact, technical, economic buyer or champion." />
+                <SortTh label="Lifecycle" sortKey="lifecycle" {...th} info="Lead, qualified, customer or disqualified." />
+                <SortTh label="Source" sortKey="source" {...th} info="How the contact reached the CRM: import, website form, Freshsales migration…" />
+                <SortTh label="Created" sortKey="created_at" firstDesc {...th} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
