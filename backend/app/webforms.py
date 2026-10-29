@@ -183,6 +183,40 @@ def _summary(form: WebForm, data: dict[str, str], page: str | None) -> str:
     return "\n".join(lines)
 
 
+def upsert_contact(db: Session, email: str, values: dict[str, str], *, lead_source: str | None,
+                   brand_id: int | None, owner_id: int | None) -> tuple[Contact, bool]:
+    """The contact with this email, created if new. Blank fields are filled from `values` (mapped field names), never
+    overwritten; the account is matched by email domain, then by company name. Returns (contact, created)."""
+    ct = find_contact_by_email(db, email)
+    created = ct is None
+    if ct is None:
+        ct = Contact(email=email, lifecycle="lead", role="customer_contact", extra={})
+        db.add(ct)
+    if values.get("full_name") and not (values.get("first_name") or values.get("last_name")):
+        first, _, last = values["full_name"].strip().partition(" ")
+        values["first_name"], values["last_name"] = first, last.strip()
+    for f, n in LENGTHS.items():
+        if values.get(f) and not getattr(ct, f):
+            setattr(ct, f, values[f][:n])
+    ct.source = ct.source or lead_source
+    ct.brand_id = ct.brand_id or brand_id
+    company = (values.get("company") or "")[:255]
+    if ct.account_id is None:
+        domain = email_domain(email)
+        acc = db.scalar(select(Account).where(func.lower(Account.domain) == domain).order_by(Account.id)) \
+            if domain else None
+        if acc is None and company:
+            acc = db.scalar(select(Account).where(func.lower(Account.name) == company.lower()).order_by(Account.id))
+        if acc is not None:
+            ct.account_id = acc.id
+            ct.owner_id = ct.owner_id or owner_id or acc.owner_id
+        elif company and not (ct.extra or {}).get("company"):
+            ct.extra = {**(ct.extra or {}), "company": company}
+    ct.owner_id = ct.owner_id or owner_id
+    db.flush()
+    return ct, created
+
+
 def submit(db: Session, form: WebForm, raw: dict, ip: str | None = None, user_agent: str | None = None,
            page: str | None = None) -> FormSubmission:
     """Process one submission (already authenticated). The caller commits, then sends the opt-in email if pending."""
@@ -204,33 +238,8 @@ def submit(db: Session, form: WebForm, raw: dict, ip: str | None = None, user_ag
         return sub
 
     now = dt.datetime.now(dt.UTC)
-    ct = find_contact_by_email(db, email)
-    sub.contact_created = ct is None
-    if ct is None:
-        ct = Contact(email=email, lifecycle="lead", role="customer_contact", extra={})
-        db.add(ct)
-    if values.get("full_name") and not (values.get("first_name") or values.get("last_name")):
-        first, _, last = values["full_name"].strip().partition(" ")
-        values["first_name"], values["last_name"] = first, last.strip()
-    for f, n in LENGTHS.items():
-        if values.get(f) and not getattr(ct, f):
-            setattr(ct, f, values[f][:n])
-    ct.source = ct.source or form.lead_source
-    ct.brand_id = ct.brand_id or form.brand_id
-    company = (values.get("company") or "")[:255]
-    if ct.account_id is None:
-        domain = email_domain(email)
-        acc = db.scalar(select(Account).where(func.lower(Account.domain) == domain).order_by(Account.id)) \
-            if domain else None
-        if acc is None and company:
-            acc = db.scalar(select(Account).where(func.lower(Account.name) == company.lower()).order_by(Account.id))
-        if acc is not None:
-            ct.account_id = acc.id
-            ct.owner_id = ct.owner_id or form.owner_id or acc.owner_id
-        elif company and not (ct.extra or {}).get("company"):
-            ct.extra = {**(ct.extra or {}), "company": company}
-    ct.owner_id = ct.owner_id or form.owner_id
-    db.flush()
+    ct, sub.contact_created = upsert_contact(db, email, values, lead_source=form.lead_source, brand_id=form.brand_id,
+                                             owner_id=form.owner_id)
     sub.contact_id = ct.id
 
     # mailing list; a field mapped to "consent" makes joining depend on that checkbox

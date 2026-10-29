@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     # and /api/metrics without a user account (Authorization: Bearer <token>, or Basic with the token as password).
     # Empty = only signed-in administrators can read them.
     monitoring_token: str = ""
+    # Website tracking: page views and events older than this are deleted (anonymous visitors too)
+    tracking_retention_days: int = 395
     # Folder holding the backup container's dumps, mounted read-only into the API; empty or missing = not checked
     backup_dir: str = "/backups"
 

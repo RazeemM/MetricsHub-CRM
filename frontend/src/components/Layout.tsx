@@ -21,6 +21,7 @@ import {
   IconLayoutKanban,
   IconBulb,
   IconChartBar,
+  IconCode,
   IconListDetails,
   IconMail,
   IconMailCog,
@@ -125,7 +126,9 @@ export default function Layout() {
   const loc = useLocation()
   const nav = useNavigate()
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
-  const marketing = isAdmin ? [...MARKETING, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }] : MARKETING
+  const marketing = isAdmin
+    ? [...MARKETING, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }, { to: '/tracking', label: 'Website tracking', icon: IconCode }]
+    : MARKETING
   const tail = [{ to: '/import', label: 'Import / export', icon: IconFileImport }, ...(isAdmin ? [{ to: '/users', label: 'Users', icon: IconUsers }, { to: '/system', label: 'System status', icon: IconHeartbeat }] : [])]
   const active = (to: string, exact?: boolean) => (to === '/' || exact ? loc.pathname === to : loc.pathname.startsWith(to))
   const inMarketing = marketing.some((it) => active(it.to, 'exact' in it && it.exact))

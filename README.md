@@ -125,6 +125,55 @@ The **Marketing** section of the menu holds the *Overview*, *Campaigns & newslet
   - The link opens a confirmation page, because mail scanners follow links. Confirming unsubscribes the contact from all marketing email and every list, and is noted on their timeline.
 - **Tracking links** are signed, so they cannot be used to redirect people to other sites. Tracking can be turned off per campaign.
 
+## Website tracking
+
+**Marketing → Website tracking** (administrators) gives each website a tracking code, like Freshworks' CRM tracking code:
+
+```html
+<script src="https://crm.metricshub.com/api/public/t/<key>.js" async></script>
+```
+
+1. **Add the code** before `</head>` on every page, or once in the site's template or tag manager. **Send this to a developer** opens an email with the instructions.
+2. **Add the domains** it runs on. Subdomains are included. Data from any other site is refused.
+
+What it records:
+- **Page views**, including route changes in single-page apps, with the page title. Addresses are stored without their query string.
+- **Where each visit came from:**
+  - The campaign parameters (`utm_source`, `utm_medium`, `utm_campaign`) when present.
+  - Otherwise the referring site: *organic* for search engines, *social* for social networks, *referral* for other sites, *direct* when there is none.
+  - Ad click ids mark paid search (Google, Bing).
+  - *Track other URL parameters* also keeps `utm_term`, `utm_content` and the click ids.
+- **Forms with an email field:**
+  - Submitting one creates or completes the contact: name, company (matched to an account by email domain or name), phone, job title, country, LinkedIn, and a consent checkbox.
+  - Other fields, passwords and hidden fields are never sent. Add `data-mhcrm-ignore` to a form to skip it.
+  - Earlier anonymous visits from that browser join the contact, and the timeline gets a note saying where the contact first came from.
+- **Your own calls:**
+  ```html
+  <script>
+    window.mhcrm = window.mhcrm || []
+    mhcrm.push(['identify', { email: 'jane@example.com', first_name: 'Jane', company: 'Example Corp' }])
+    mhcrm.push(['track', 'Downloaded datasheet', { product: 'Hardware Sentry' }])
+  </script>
+  ```
+
+Where it shows:
+- **On the contact:** a *Website activity* card with the original and latest source, first and last visit, visits, page views, most viewed pages and a timeline of pages, events and forms. The source is also kept in the contact's data, as `web.original` and `web.latest`.
+- **On the tracking page:** visitors, identified visitors, page views, sessions, custom events, top pages, sources, events, and recently seen contacts.
+- **Check website integration:** looks for the code on each domain's home page and shows the last page view received.
+
+Privacy:
+- The code sets two first-party cookies: a visitor id for 13 months and a session id for 30 minutes.
+- IP addresses are not stored.
+- Browsers sending *Do Not Track* or *Global Privacy Control* are ignored. This setting is on by default.
+- **Wait for the visitor's consent** records nothing and sets no cookie until the site's cookie banner calls `mhcrm.push(['consent', true])`. `false` forgets the visitor. Turn this on for visitors in the EU.
+- Visits older than `CRM_TRACKING_RETENTION_DAYS` (395 by default) are deleted, along with anonymous visitors, by the scheduled job.
+
+Endpoints:
+- `GET /api/public/t/<key>.js` serves the script.
+- `POST /api/public/t/<key>/collect` receives what it sends, rate-limited per address.
+- `/api/tracking/sites` manages the sites.
+- `/api/contacts/<id>/web` returns a contact's activity.
+
 ## Website forms (phase 4)
 
 The websites' Contact, Quote request, Trial, Download, Partner and Newsletter forms post straight into the CRM. Admins set them up under **Website forms** in the menu. Each form has:

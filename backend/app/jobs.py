@@ -11,7 +11,8 @@ import sys
 
 from sqlalchemy import text
 
-from . import campaigns, monitoring
+from . import campaigns, monitoring, tracking
+from .config import get_settings
 from .db import SessionLocal, engine
 from .entitlements import auto_close_lapsed, send_renewal_notices
 
@@ -26,6 +27,9 @@ def run_renewals() -> int:
     with SessionLocal() as db:
         if not db.scalar(text("SELECT pg_try_advisory_xact_lock(:id)"), {"id": LOCK_ID}):
             return 0
+        pruned = tracking.prune(db, get_settings().tracking_retention_days)
+        if pruned:
+            log.info("Forgot %s website events older than %s days", pruned, get_settings().tracking_retention_days)
         closed = auto_close_lapsed(db)
         if closed:
             log.info("Closed %s lapsed licence(s) renewed later", closed)

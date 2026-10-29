@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { Activities } from '../components/Activities'
+import { WebActivity } from '../components/WebActivity'
 import { ComposeEmail } from '../components/ComposeEmail'
 import { Field, LifecycleBadge, PageHeader } from '../components/common'
 import { ContactEmailCard } from '../components/EmailEditor'
@@ -117,6 +118,7 @@ export default function ContactDetail() {
             </Stack>
           </Card>
           <ContactEmailCard contactId={id} />
+          <WebActivity contactId={id} />
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 8 }}>
           <Activities link={{ contact_id: id }} />

@@ -1,4 +1,5 @@
-"""Public endpoints (no login): unsubscribe, open pixel, click redirect, website forms and their opt-in link."""
+"""Public endpoints (no login): unsubscribe, open pixel, click redirect, website forms and their opt-in link,
+website tracking."""
 import base64
 import datetime as dt
 import html
@@ -12,10 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import campaigns as cmp
+from .. import tracking
 from .. import webforms as wf
 from ..config import get_settings
 from ..db import get_db
-from ..models import CampaignRecipient, WebForm
+from ..models import CampaignRecipient, TrackingSite, WebForm
 
 router = APIRouter(tags=["public"])
 PIXEL = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
@@ -165,6 +167,46 @@ def _submit(key: str, request: Request, body: bytes, data: dict, background: Bac
         msg = "Please check your inbox to confirm your subscription." if status == "pending_confirmation"             else "We received your message and will get back to you soon."
         return _page("Thank you", f"<h2>Thank you</h2><p>{msg}</p>")
     return JSONResponse({"ok": True, "status": status}, headers=NO_STORE)
+
+
+# ---------------------------------------------------------------- website tracking
+@router.get("/api/public/t/{key}.js")
+def tracking_script(key: str, db: Session = Depends(get_db)):
+    """The tracking code a website embeds: <script src=".../api/public/t/<key>.js" async></script>."""
+    site = db.scalar(select(TrackingSite).where(TrackingSite.key == key))
+    if not site or not site.active:
+        return Response("/* MetricsHub CRM: unknown or disabled tracking code */", media_type="text/javascript",
+                        headers={"Cache-Control": "no-store"})
+    return Response(tracking.script(site), media_type="text/javascript",
+                    headers={"Cache-Control": "public, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+
+@router.post("/api/public/t/{key}/collect", status_code=204)
+async def tracking_collect(key: str, request: Request, db: Session = Depends(get_db)):
+    """What the tracking code sends (JSON as text/plain, so browsers send it without a CORS preflight). Accepted only
+    from the site's domains, judged by the Origin (or Referer) header browsers add."""
+    body = await request.body()
+    return await run_in_threadpool(_collect, key, request, body, db)
+
+
+def _collect(key: str, request: Request, body: bytes, db: Session):
+    ip = client_ip(request)
+    if len(body) > tracking.MAX_BODY:
+        return Response(status_code=413)
+    if not tracking.collect_limiter.allow(ip):
+        return Response(status_code=429)
+    site = db.scalar(select(TrackingSite).where(TrackingSite.key == key))
+    if not site or not site.active:
+        return Response(status_code=404)
+    if not tracking.host_allowed(site, request.headers.get("origin") or request.headers.get("referer")):
+        return Response(status_code=403)
+    try:
+        batch = tracking.Batch.model_validate_json(body)
+    except ValueError:
+        return Response(status_code=400)
+    tracking.collect(db, site, batch, user_agent=request.headers.get("user-agent"), ip=ip)
+    db.commit()
+    return Response(status_code=204, headers=NO_STORE)
 
 
 @router.get("/api/public/confirm/{token}", response_class=HTMLResponse)

@@ -24,6 +24,8 @@ from .models import (
     Stage,
     StageHistory,
     User,
+    WebEvent,
+    WebVisitor,
 )
 from .pricing import compute_totals, months_between
 from .schemas import LineItemIn
@@ -87,6 +89,8 @@ def merge_contacts(db: Session, keep: Contact, drop: Contact) -> None:
     db.query(Opportunity).filter(Opportunity.primary_contact_id == drop.id).update({"primary_contact_id": keep.id})
     db.query(Opportunity).filter(Opportunity.partner_contact_id == drop.id).update({"partner_contact_id": keep.id})
     db.query(FormSubmission).filter(FormSubmission.contact_id == drop.id).update({"contact_id": keep.id})
+    db.query(WebVisitor).filter(WebVisitor.contact_id == drop.id).update({"contact_id": keep.id})
+    db.query(WebEvent).filter(WebEvent.contact_id == drop.id).update({"contact_id": keep.id})
     # memberships and campaign rows are unique per contact: move those keep doesn't already have
     lists = set(db.scalars(select(ListMember.list_id).where(ListMember.contact_id == keep.id)))
     for m in db.scalars(select(ListMember).where(ListMember.contact_id == drop.id)).all():

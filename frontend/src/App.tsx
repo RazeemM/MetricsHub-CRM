@@ -24,6 +24,7 @@ import QuoteTemplates from './pages/QuoteTemplates'
 import SystemStatus from './pages/SystemStatus'
 import Users from './pages/Users'
 import WebForms, { WebFormDetail } from './pages/WebForms'
+import WebsiteTracking from './pages/WebsiteTracking'
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/users" element={<Users />} />
         <Route path="/system" element={<SystemStatus />} />
         <Route path="/web-forms" element={<WebForms />} />
+        <Route path="/tracking" element={<WebsiteTracking />} />
         <Route path="/web-forms/:id" element={<WebFormDetail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -564,6 +564,66 @@ class FormSubmission(Base):
     note: Mapped[str | None] = mapped_column(String(500))  # why spam / error, or that the confirmation was sent
 
 
+class TrackingSite(TimestampMixin, Base):
+    """A website carrying the CRM tracking code: page views, custom events and visitors identified by their email
+    (forms they fill in, or the site's own identify call). See app.tracking."""
+
+    __tablename__ = "tracking_sites"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(32), unique=True)  # public: it is in the snippet
+    name: Mapped[str] = mapped_column(String(120))
+    domains: Mapped[list] = mapped_column(JSONB, default=list)  # hostnames; subdomains included
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="SET NULL"))
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))  # of new contacts
+    lead_source: Mapped[str] = mapped_column(String(40), default="website_contact")
+    track_utm: Mapped[bool] = mapped_column(Boolean, default=True)  # source, medium, campaign
+    track_params: Mapped[bool] = mapped_column(Boolean, default=False)  # gclid, utm_term... (see tracking.PARAMS)
+    capture_forms: Mapped[bool] = mapped_column(Boolean, default=True)  # forms with an email field
+    require_consent: Mapped[bool] = mapped_column(Boolean, default=False)  # wait for mhcrm.consent(true)
+    respect_dnt: Mapped[bool] = mapped_column(Boolean, default=True)  # Do Not Track / Global Privacy Control
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_hit_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_hit_url: Mapped[str | None] = mapped_column(String(1000))
+    brand: Mapped[Brand | None] = relationship()
+
+
+class WebVisitor(Base):
+    """One browser on a tracked site (a first-party cookie), linked to a contact once identified."""
+
+    __tablename__ = "web_visitors"
+    __table_args__ = (UniqueConstraint("site_id", "vid"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("tracking_sites.id", ondelete="CASCADE"))
+    vid: Mapped[str] = mapped_column(String(40))
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), index=True)
+    first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    sessions: Mapped[int] = mapped_column(Integer, default=0)
+    page_views: Mapped[int] = mapped_column(Integer, default=0)
+    first_touch: Mapped[dict] = mapped_column(JSONB, default=dict)  # source, medium, campaign, referrer, landing...
+    last_touch: Mapped[dict] = mapped_column(JSONB, default=dict)  # the latest session that came from somewhere
+    user_agent: Mapped[str | None] = mapped_column(String(255))
+
+
+class WebEvent(Base):
+    """A page view, custom event or identification on a tracked site."""
+
+    __tablename__ = "web_events"
+    __table_args__ = (Index("ix_web_events_contact", "contact_id", "created_at"),
+                      Index("ix_web_events_site_time", "site_id", "created_at"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("tracking_sites.id", ondelete="CASCADE"))
+    visitor_id: Mapped[int] = mapped_column(ForeignKey("web_visitors.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"))
+    session: Mapped[str | None] = mapped_column(String(40))
+    kind: Mapped[str] = mapped_column(String(16))  # page, event, identify
+    name: Mapped[str | None] = mapped_column(String(255))  # event name, or the page title
+    url: Mapped[str | None] = mapped_column(String(1000))  # without the query string (it may hold personal data)
+    referrer: Mapped[str | None] = mapped_column(String(1000))
+    props: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SavedView(TimestampMixin, Base):
     """A named set of filters for a page (the pipeline board), private to its owner or shared with everyone."""
 

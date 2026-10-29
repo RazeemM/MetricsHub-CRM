@@ -11,7 +11,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .routers import (
     accounts, activities, compose, contacts, core, dashboard, email, entitlements, imports, insights, marketing,
-    monitoring, opportunities, products, public, quotes, sso, views, webforms,
+    monitoring, opportunities, products, public, quotes, sso, tracking, views, webforms,
 )
 from .jobs import scheduler
 from .seed import seed
@@ -86,7 +86,7 @@ async def public_forms_cors(request: Request, call_next):
 
 
 for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements,
-          email, marketing, compose, insights, public, webforms, monitoring, views):
+          email, marketing, compose, insights, public, webforms, monitoring, views, tracking):
     app.include_router(r.router)
 
 
