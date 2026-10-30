@@ -1,12 +1,13 @@
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd'
 import { Badge, Button, Card, Group, SegmentedControl, Stack, Text, Tooltip } from '@mantine/core'
-import { IconPlus } from '@tabler/icons-react'
+import { IconClipboardText, IconPlus } from '@tabler/icons-react'
 import { useDebouncedValue } from '@mantine/hooks'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
+import { BmcQuoteImport } from '../components/BmcQuoteImport'
 import { PageHeader } from '../components/common'
 import { boardParams, DEFAULT_FILTERS, PipelineViewBar, type ViewFilters } from '../components/PipelineViews'
 import { useApiMutation, usePipelines } from '../hooks'
@@ -38,6 +39,7 @@ export default function PipelineBoard() {
   const { canWrite, user } = useAuth()
   const { data: pipelines } = usePipelines()
   const [filters, setFilters] = useState<ViewFilters>(DEFAULT_FILTERS)
+  const [quoteOpen, setQuoteOpen] = useState(false)
   const [debouncedQ] = useDebouncedValue(filters.q, 250)
   const known = pipelines?.some((p) => p.id === filters.pipeline_id)
   const pid = known ? String(filters.pipeline_id) : pipelines?.[0] ? String(pipelines[0].id) : null
@@ -72,14 +74,20 @@ export default function PipelineBoard() {
 
   return (
     <>
+      <BmcQuoteImport opened={quoteOpen} onClose={() => setQuoteOpen(false)} />
       <PageHeader
         title="Pipeline"
         help="pipeline"
         actions={
           canWrite && (
-            <Button component={Link} to="/opportunities/new" leftSection={<IconPlus size={16} />}>
-              New opportunity
-            </Button>
+            <>
+              <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={() => setQuoteOpen(true)}>
+                Paste BMC quote
+              </Button>
+              <Button component={Link} to="/opportunities/new" leftSection={<IconPlus size={16} />}>
+                New opportunity
+              </Button>
+            </>
           )
         }
       />

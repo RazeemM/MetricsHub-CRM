@@ -169,6 +169,7 @@ export default function OpportunityEdit() {
       line_items: lines.map((l) => ({
         product_id: l.product_id,
         name: l.product_id ? undefined : l.name,
+        description: l.description || null,
         unit: l.product_id || l.unit !== 'deal_total' ? undefined : l.unit,
         quantity: l.quantity,
         unit_price: l.unit_price,

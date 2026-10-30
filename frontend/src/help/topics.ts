@@ -131,6 +131,18 @@ Add lines from the catalog. The unit price comes from the **price book**; you ca
 
 Amounts in different currencies are never added together.
 
+## From a BMC quote
+
+When a BMC quote with Sentry products comes to you for approval, use **Paste BMC quote** (on the Pipeline or Opportunities page):
+
+1. Open the approval email, select all of it (Ctrl+A), copy it and paste it into the box. Copying from Outlook, a browser or a PDF all work.
+2. **Read quote** lists the Sentry products found in the quote, with their quantity, period, discount and total charge. The BMC products are left out. Untick a line to leave it out too.
+3. Pick the customer account (or add it), check the deal type and expected close, and **Create opportunity**.
+
+The opportunity is a Sentry Software deal through BMC MarketZone, referred by BMC, at the "Proposal / Follow-up" stage ("Renewal pending" for a renewal). Each Sentry product becomes a line worth its **total charge** in the quote, with the quantity, list and effective unit prices, discount and dates in its description. The contract runs from the earliest start date to the latest end date. The BMC sales rep named in the approvals becomes the partner contact when they are a contact in the CRM, and the approvals are kept in a note.
+
+> Pasting the same quote twice is caught: the second time you get a link to the opportunity already created.
+
 ## Stages
 
 **New Business:** New (10%) → Discovery (20%) → Demo (30%) → PoC / Trial (50%) → Proposal / Follow-up (60%) → Negotiation (80%) → Won / Lost. **Renewals:** Upcoming renewal → Renewal pending → Renewed / Churned.

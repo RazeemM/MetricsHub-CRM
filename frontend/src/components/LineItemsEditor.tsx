@@ -11,6 +11,7 @@ export interface DraftLine {
   key: string
   product_id: number | null
   name: string
+  description?: string | null
   billing_type: 'recurring' | 'one_time'
   unit: string | null
   quantity: number
@@ -49,6 +50,7 @@ export const fromLineItem = (li: LineItem): DraftLine => ({
   key: `li-${li.id ?? Math.random()}`,
   product_id: li.product_id,
   name: li.name,
+  description: li.description,
   billing_type: li.billing_type,
   unit: li.unit ?? null,
   quantity: Number(li.quantity),
@@ -146,6 +148,11 @@ export function LineItemsEditor({
                         canCreate={isAdmin && !!brandId}
                       />
                     )}
+                    {l.description && (
+                      <Text size="xs" c="dimmed">
+                        {l.description}
+                      </Text>
+                    )}
                     {!l.product_id && !readOnly && (
                       <TextInput placeholder={isDealTotal(l) ? 'Which products? e.g. Multiple products: Hardware, Storage' : 'Custom line name'} value={l.name} onChange={(e) => update(l.key, { name: e.target.value })} disabled={readOnly} />
                     )}
@@ -153,7 +160,7 @@ export function LineItemsEditor({
                       <Badge size="xs" variant="light" color={l.billing_type === 'recurring' ? 'violet' : 'orange'}>
                         {isDealTotal(l) ? (l.billing_type === 'recurring' ? 'total · licences / subscription' : 'total · one-time') : l.billing_type === 'recurring' ? 'per month' : 'one-time'}
                       </Badge>
-                      {l.unit && (
+                      {l.unit && !isDealTotal(l) && (
                         <Badge size="xs" variant="outline" color="gray">
                           per {UNITS[l.unit] ?? l.unit}
                         </Badge>

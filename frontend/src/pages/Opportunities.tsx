@@ -1,11 +1,12 @@
 import { Badge, Button, Card, Group, SegmentedControl, Select, Table, TextInput } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconDownload, IconPlus, IconSearch } from '@tabler/icons-react'
+import { IconClipboardText, IconDownload, IconPlus, IconSearch } from '@tabler/icons-react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
+import { BmcQuoteImport } from '../components/BmcQuoteImport'
 import { PageHeader, Pager } from '../components/common'
 import { SortTh, type Sort } from '../components/ui'
 import { useBrands, usePlatforms } from '../hooks'
@@ -18,6 +19,7 @@ export default function Opportunities() {
   const { data: brands } = useBrands()
   const { data: platforms } = usePlatforms()
   const [q, setQ] = useState('')
+  const [quoteOpen, setQuoteOpen] = useState(false)
   const [status, setStatus] = useState('open')
   const [brandId, setBrandId] = useState<string | null>(null)
   const [platformId, setPlatformId] = useState<string | null>(null)
@@ -43,6 +45,7 @@ export default function Opportunities() {
 
   return (
     <>
+      <BmcQuoteImport opened={quoteOpen} onClose={() => setQuoteOpen(false)} />
       <PageHeader
         title="Opportunities"
         help="opportunities"
@@ -51,6 +54,11 @@ export default function Opportunities() {
             <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => download('/export/opportunities', { q: debounced, status: params.status, brand_id: params.brand_id })}>
               Export
             </Button>
+            {canWrite && (
+              <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={() => setQuoteOpen(true)}>
+                Paste BMC quote
+              </Button>
+            )}
             {canWrite && (
               <Button component={Link} to="/opportunities/new" leftSection={<IconPlus size={16} />}>
                 New opportunity

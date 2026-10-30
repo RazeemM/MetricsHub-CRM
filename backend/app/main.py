@@ -10,8 +10,8 @@ from . import monitoring as stats
 from .config import get_settings
 from .db import SessionLocal
 from .routers import (
-    accounts, activities, compose, contacts, core, dashboard, email, entitlements, imports, insights, marketing,
-    monitoring, opportunities, products, public, quotes, sso, tracking, views, webforms,
+    accounts, activities, bmc_quotes, compose, contacts, core, dashboard, email, entitlements, imports, insights,
+    marketing, monitoring, opportunities, products, public, quotes, sso, tracking, views, webforms,
 )
 from .jobs import scheduler
 from .seed import seed
@@ -85,8 +85,8 @@ async def public_forms_cors(request: Request, call_next):
     return response
 
 
-for r in (core, sso, accounts, contacts, products, opportunities, activities, imports, dashboard, quotes, entitlements,
-          email, marketing, compose, insights, public, webforms, monitoring, views, tracking):
+for r in (core, sso, accounts, contacts, products, bmc_quotes, opportunities, activities, imports, dashboard, quotes,
+          entitlements, email, marketing, compose, insights, public, webforms, monitoring, views, tracking):
     app.include_router(r.router)
 
 
