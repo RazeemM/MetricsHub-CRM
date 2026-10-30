@@ -57,7 +57,7 @@ def test_parse_finds_sentry_lines(text):
     assert storage.start == dt.date(2026, 12, 30) and storage.end == dt.date(2027, 12, 29)
     assert storage.term_months == 12 and storage.discount_pct == Decimal("94.22")
     assert storage.list_price == Decimal("31.24") and storage.effective_price == Decimal("0.90")
-    assert storage.recurring_discount == Decimal("94.22") and storage.list_value() == Decimal("21321.37")
+    assert storage.recurring_discount == Decimal("94.22")
     assert storage.status == "Generally Available" and storage.action == "UpdateProduct"
     assert q.sentry_lines[3].status == "Transition"
     assert sum(ln.total_charge for ln in q.sentry_lines) == Decimal("50160.50")
@@ -111,11 +111,13 @@ def test_import_creates_sentry_opportunity(client):
     assert o["contract_start"] == "2026-12-30" and o["term_months"] == 12
     assert [li["name"] for li in o["line_items"]][2] == "BHCO OnPrem for Storage Plus : managed asset - average Port : OPS"
     assert len(o["line_items"]) == 3  # the backup line was left out
-    # quantity x list price per month x term, less the recurring discount
+    # quantity, list price, recurring discount and term from the quote; worth the line's total charge
     storage = o["line_items"][0]
     assert (Decimal(storage["quantity"]), Decimal(storage["unit_price"]), Decimal(storage["discount_pct"]),
             storage["term_months"], storage["unit"]) == (984, Decimal("31.24"), Decimal("94.22"), 12, None)
-    assert Decimal(storage["line_total"]) == Decimal("21321.37")
+    assert Decimal(storage["line_total"]) == Decimal(storage["fixed_total"]) == Decimal("10668.00")
+    kept = [ln for i, ln in enumerate(p["lines"]) if i != 2]
+    assert Decimal(o["amount_tcv"]) == sum(Decimal(ln["total_charge"]) for ln in kept)
     assert storage["description"].startswith("Qty 984 · total charge USD 10,668.00 · list USD 31.24/unit")
     assert Decimal(o["amount_tcv"]) == sum(Decimal(li["line_total"]) for li in o["line_items"])
     assert o["currency"] == "USD" and o["price_book_id"]
@@ -135,14 +137,14 @@ def test_import_refuses_quote_without_sentry_lines(client):
     assert r.status_code == 422 and "none of them is a Sentry product" in r.json()["detail"]
 
 
-def test_import_at_total_charge_and_in_euros(client):
+def test_import_in_euros_at_total_charge(client):
     acct = client.post("/api/accounts", json={"name": "Euro Customer SA", "account_type": "customer"}).json()
     eur = QUOTE.replace("USD", "EUR").replace("30-DEC-2026", "22-FEB-2027")  # another quote, no EUR BMC price book
-    r = client.post("/api/opportunities/bmc-quote", json={"text": eur, "account_id": acct["id"], "pricing": "charge"})
+    r = client.post("/api/opportunities/bmc-quote", json={"text": eur, "account_id": acct["id"]})
     assert r.status_code == 201, r.text
     o = r.json()
     assert Decimal(o["amount_tcv"]) == Decimal("50160.50")
-    assert {li["unit"] for li in o["line_items"]} == {"deal_total"}
+    assert all(li["unit"] is None and li["line_total"] == li["fixed_total"] for li in o["line_items"])
     books = {b["id"]: b["currency"] for b in client.get("/api/price-books").json()}
     assert o["currency"] == "EUR" and (o["price_book_id"] is None or books[o["price_book_id"]] == "EUR")
 
@@ -153,3 +155,14 @@ def test_line_without_pricing_row_keeps_total_charge(client):
     o = client.post("/api/opportunities/bmc-quote", json={"text": general_only, "account_id": acct["id"]}).json()
     assert {li["unit"] for li in o["line_items"]} == {"deal_total"}
     assert Decimal(o["amount_tcv"]) == Decimal("50160.50")
+
+
+def test_fixed_total_survives_an_edit_and_wins_over_the_price(client):
+    acct = client.post("/api/accounts", json={"name": "Fixed Total GmbH", "account_type": "customer"}).json()
+    quote = QUOTE.replace("30-DEC-2026", "05-JAN-2027")
+    o = client.post("/api/opportunities/bmc-quote", json={"text": quote, "account_id": acct["id"]}).json()
+    lines = [{k: li[k] for k in ("name", "description", "quantity", "unit_price", "discount_pct", "term_months",
+                                 "billing_type", "fixed_total")} for li in o["line_items"]]
+    r = client.patch(f"/api/opportunities/{o['id']}", json={"line_items": lines})
+    assert r.status_code == 200, r.text
+    assert Decimal(r.json()["amount_tcv"]) == Decimal("50160.50")

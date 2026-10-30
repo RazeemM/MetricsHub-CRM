@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from .pricing import line_total, months_between
+from .pricing import months_between
 
 # BMC product names of Sentry products (OnPrem and SaaS). Any product with "Sentry" in its name counts too.
 SENTRY_PRODUCTS = [
@@ -111,10 +111,6 @@ class QuoteLine:
     def priced(self) -> bool:
         """The pricing table gave this line a list price and a recurring discount."""
         return self.list_price is not None and self.recurring_discount is not None and self.quantity > 0
-
-    def list_value(self) -> Decimal:
-        """The line's value in the CRM from its list price and recurring discount."""
-        return line_total(self.quantity, self.list_price, self.recurring_discount, self.term_months, "recurring")
 
     @property
     def action(self) -> str:

@@ -23,6 +23,11 @@ def test_deal_total_line_is_not_multiplied_by_term():
     assert (t.tcv, t.arr) == (Decimal("120000.00"), Decimal("60000.00"))
 
 
+def test_fixed_total_is_the_line_value():
+    # an imported quote line: list price and discount for reference, worth its total charge
+    assert line_total(984, "31.24", "94.22", 12, "recurring", None, "10668") == Decimal("10668.00")
+
+
 def test_rounding_half_up():
     assert line_total(1, "0.125", 0, 1, "recurring") == Decimal("0.13")
 

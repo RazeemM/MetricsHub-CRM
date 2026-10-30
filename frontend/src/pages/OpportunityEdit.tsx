@@ -178,6 +178,7 @@ export default function OpportunityEdit() {
         discount_pct: l.discount_pct,
         term_months: l.billing_type === 'recurring' ? l.term_months : null,
         billing_type: l.billing_type,
+        fixed_total: l.fixed_total ?? null,
       })),
     })
   }

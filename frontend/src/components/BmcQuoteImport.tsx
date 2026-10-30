@@ -21,7 +21,6 @@ interface QuoteLine {
   list_price: string | null
   effective_price: string | null
   recurring_discount: string | null
-  list_value: string
   priced: boolean
   status: string | null
   action: string
@@ -35,7 +34,6 @@ interface QuotePreview {
   line_count: number
   quote_total: string
   sentry_total: string
-  list_total: string
   contract_start: string
   contract_end: string
   deal_type: string
@@ -56,7 +54,6 @@ export function BmcQuoteImport({ opened, onClose }: { opened: boolean; onClose: 
   const [dealType, setDealType] = useState('new')
   const [close, setClose] = useState<Date | null>(null)
   const [skip, setSkip] = useState<number[]>([])
-  const [pricing, setPricing] = useState<'list' | 'charge'>('list')
 
   const reset = () => {
     setText('')
@@ -84,7 +81,7 @@ export function BmcQuoteImport({ opened, onClose }: { opened: boolean; onClose: 
     () =>
       api<Opportunity>('/opportunities/bmc-quote', {
         method: 'POST',
-        body: { text, account_id: accountId, title: title.trim() || null, deal_type: dealType, expected_close_date: close ? dayjs(close).format('YYYY-MM-DD') : null, skip, pricing },
+        body: { text, account_id: accountId, title: title.trim() || null, deal_type: dealType, expected_close_date: close ? dayjs(close).format('YYYY-MM-DD') : null, skip },
       }),
     {
       invalidate: [['opportunities'], ['board']],
@@ -97,8 +94,7 @@ export function BmcQuoteImport({ opened, onClose }: { opened: boolean; onClose: 
   )
 
   const kept = p ? p.lines.filter((_, i) => !skip.includes(i)) : []
-  const keptTotal = kept.reduce((s, l) => s + Number(pricing === 'list' ? l.list_value : l.total_charge), 0)
-  const chargeTotal = kept.reduce((s, l) => s + Number(l.total_charge), 0)
+  const keptTotal = kept.reduce((s, l) => s + Number(l.total_charge), 0)
   const suffix = p?.quote_number ? ` ${p.quote_number}` : ''
 
   return (
@@ -152,8 +148,7 @@ export function BmcQuoteImport({ opened, onClose }: { opened: boolean; onClose: 
                   <Table.Th>Period</Table.Th>
                   <Table.Th ta="right">List price</Table.Th>
                   <Table.Th ta="right">Recurring discount</Table.Th>
-                  <Table.Th ta="right">Total charge</Table.Th>
-                  <Table.Th ta="right">List less discount</Table.Th>
+                  <Table.Th ta="right">Total charge (line value)</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -195,41 +190,22 @@ export function BmcQuoteImport({ opened, onClose }: { opened: boolean; onClose: 
                     </Table.Td>
                     <Table.Td ta="right">{l.list_price ? money2(l.list_price, p.currency) : '—'}</Table.Td>
                     <Table.Td ta="right">{l.recurring_discount ? `${Number(l.recurring_discount)}%` : '—'}</Table.Td>
-                    <Table.Td ta="right" fw={pricing === 'charge' ? 600 : undefined}>
+                    <Table.Td ta="right" fw={600}>
                       {money2(l.total_charge, p.currency)}
-                    </Table.Td>
-                    <Table.Td ta="right" fw={pricing === 'list' ? 600 : undefined}>
-                      {l.priced ? money2(l.list_value, p.currency) : '—'}
                     </Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>
             </Table>
           </ScrollArea>
-          <Group justify="space-between" align="flex-end">
-            <div>
-              <Text size="sm" fw={500} mb={4}>
-                Line values
-              </Text>
-              <SegmentedControl
-                size="xs"
-                value={pricing}
-                onChange={(v) => setPricing(v as 'list' | 'charge')}
-                data={[
-                  { value: 'list', label: 'List price less recurring discount' },
-                  { value: 'charge', label: 'Total charge in the quote' },
-                ]}
-              />
-            </div>
+          <Group justify="space-between" align="flex-start">
+            <Text size="xs" c="dimmed" maw={520}>
+              Each line is worth its total charge: the value after all discounts, over its period. Its quantity, list price and recurring discount are filled in for reference.
+            </Text>
             <Text size="sm" ta="right">
               Opportunity value: <b>{money2(keptTotal, p.currency)}</b>
             </Text>
           </Group>
-          {pricing === 'list' && Math.abs(keptTotal - chargeTotal) > Math.max(1, chargeTotal * 0.01) && (
-            <Alert color="orange" icon={<IconAlertTriangle size={18} />} py="xs">
-              List price less the recurring discount comes to {money2(keptTotal, p.currency)}, but the quote charges {money2(chargeTotal, p.currency)} for these lines. Each line gets the quantity, list price, recurring discount and term; its total charge is kept in its description.
-            </Alert>
-          )}
 
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <AccountPicker

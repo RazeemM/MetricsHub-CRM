@@ -4,6 +4,8 @@ Recurring line:  quantity x unit price (per month) x term months x (1 - discount
 One-time line:   quantity x unit price x (1 - discount%)
 Deal-total line ("Multiple products", unit = deal_total): the unit price is the whole line value, never
 multiplied by the term; a recurring one still counts towards ARR over its term.
+Fixed-total line: a line with a fixed total (the total charge of an imported quote line) is worth that total;
+its quantity, unit price and discount are kept for reference.
 
 TCV  = sum of all line totals
 ARR  = sum over recurring lines of (line total / term months x 12)
@@ -20,7 +22,9 @@ def _d(value) -> Decimal:
 
 
 def line_total(quantity, unit_price, discount_pct, term_months: int | None, billing_type: str,
-               unit: str | None = None) -> Decimal:
+               unit: str | None = None, fixed_total=None) -> Decimal:
+    if fixed_total is not None:
+        return _d(fixed_total).quantize(CENT, rounding=ROUND_HALF_UP)
     qty, price, disc = _d(quantity), _d(unit_price), _d(discount_pct)
     if disc < 0 or disc > 100:
         raise ValueError("discount must be between 0 and 100")
@@ -48,7 +52,7 @@ def compute_totals(lines, default_term: int) -> Totals:
     for ln in lines:
         term = ln.term_months or default_term
         ln.line_total = line_total(ln.quantity, ln.unit_price, ln.discount_pct, term, ln.billing_type,
-                                  getattr(ln, "unit", None))
+                                  getattr(ln, "unit", None), getattr(ln, "fixed_total", None))
         if ln.billing_type == "recurring":
             recurring += ln.line_total
             if term:

@@ -124,6 +124,7 @@ export interface LineItem {
   unit_price: string | number
   discount_pct: string | number
   term_months: number | null
+  fixed_total?: string | number | null
   line_total?: string
 }
 export interface Opportunity {

@@ -192,6 +192,7 @@ def set_line_items(db: Session, opp: Opportunity, items: list[LineItemIn]) -> No
             unit_price=unit_price,
             discount_pct=item.discount_pct,
             term_months=item.term_months,
+            fixed_total=item.fixed_total,
         ))
     recompute(opp)
 

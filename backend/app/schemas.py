@@ -277,6 +277,7 @@ class LineItemIn(BaseModel):
     term_months: int | None = Field(default=None, ge=1, le=120)
     billing_type: BillingType | None = None
     unit: Literal["deal_total"] | None = None  # custom lines only: unit_price is the line's total value
+    fixed_total: Decimal | None = Field(default=None, ge=0)  # the line's agreed value (a quote's total charge)
 
 
 class LineItemOut(ORM):
@@ -291,6 +292,7 @@ class LineItemOut(ORM):
     unit_price: Decimal
     discount_pct: Decimal
     term_months: int | None
+    fixed_total: Decimal | None
     line_total: Decimal
 
 

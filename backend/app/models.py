@@ -253,6 +253,7 @@ class LineItem(Base):
     unit_price: Mapped[Decimal] = mapped_column(Money)
     discount_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"))
     term_months: Mapped[int | None] = mapped_column(Integer)  # null => opportunity term
+    fixed_total: Mapped[Decimal | None] = mapped_column(Money)  # set: the line is worth this, whatever its price
     line_total: Mapped[Decimal] = mapped_column(Money, default=Decimal("0"))
 
     opportunity: Mapped[Opportunity] = relationship(back_populates="line_items")

@@ -18,6 +18,8 @@ export interface DraftLine {
   unit_price: number
   discount_pct: number
   term_months: number | null
+  /** The line's agreed value (an imported quote's total charge): the price and discount are kept for reference. */
+  fixed_total?: number | null
 }
 
 /** A line holding the total value of several products, with no per-product breakdown. */
@@ -28,6 +30,7 @@ const NEW_PRODUCT = '__new_product'
 
 /** Mirrors backend pricing.py so the user sees totals as they type. */
 export function lineTotal(l: DraftLine, defaultTerm: number) {
+  if (l.fixed_total != null) return l.fixed_total
   const base = l.quantity * l.unit_price * (1 - (l.discount_pct || 0) / 100)
   const total = l.billing_type === 'recurring' && !isDealTotal(l) ? base * (l.term_months || defaultTerm) : base
   return Math.round(total * 100) / 100
@@ -57,6 +60,7 @@ export const fromLineItem = (li: LineItem): DraftLine => ({
   unit_price: Number(li.unit_price),
   discount_pct: Number(li.discount_pct),
   term_months: li.term_months,
+  fixed_total: li.fixed_total == null ? null : Number(li.fixed_total),
 })
 
 export function priceFor(product: Product, priceBook: PriceBook | undefined): number | null {
@@ -86,6 +90,8 @@ export function LineItemsEditor({
   const { isAdmin } = useAuth()
   const [newProduct, setNewProduct] = useState<{ key: string; name: string } | null>(null)
   const update = (key: string, patch: Partial<DraftLine>) => onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  // a new quantity, price, discount or term prices the line again instead of keeping its fixed total
+  const reprice = (key: string, patch: Partial<DraftLine>) => update(key, { ...patch, fixed_total: null })
   const blank = (): DraftLine => ({ key: `n-${Date.now()}`, product_id: null, name: '', billing_type: 'recurring', unit: null, quantity: 1, unit_price: 0, discount_pct: 0, term_months: null })
   const multiple = { product_id: null, name: 'Multiple products', unit: DEAL_TOTAL, quantity: 1, discount_pct: 0 }
   const add = () => onChange([...lines, blank()])
@@ -160,6 +166,11 @@ export function LineItemsEditor({
                       <Badge size="xs" variant="light" color={l.billing_type === 'recurring' ? 'violet' : 'orange'}>
                         {isDealTotal(l) ? (l.billing_type === 'recurring' ? 'total · licences / subscription' : 'total · one-time') : l.billing_type === 'recurring' ? 'per month' : 'one-time'}
                       </Badge>
+                      {l.fixed_total != null && (
+                        <Badge size="xs" variant="light" color="teal" title="The line is worth the total charge in the quote. Change its quantity, price, discount or term to price it again.">
+                          quote total charge
+                        </Badge>
+                      )}
                       {l.unit && !isDealTotal(l) && (
                         <Badge size="xs" variant="outline" color="gray">
                           per {UNITS[l.unit] ?? l.unit}
@@ -182,23 +193,23 @@ export function LineItemsEditor({
                     <Text size="sm" c="dimmed">
                       —
                     </Text>
-                  ) : readOnly ? <Text size="sm">{l.quantity.toLocaleString('en-US')}</Text> : <NumberInput min={0} decimalScale={2} value={l.quantity} onChange={(v) => update(l.key, { quantity: Number(v) || 0 })} w={90} thousandSeparator />}
+                  ) : readOnly ? <Text size="sm">{l.quantity.toLocaleString('en-US')}</Text> : <NumberInput min={0} decimalScale={2} value={l.quantity} onChange={(v) => reprice(l.key, { quantity: Number(v) || 0 })} w={90} thousandSeparator />}
                 </Table.Td>
                 <Table.Td>
-                  {readOnly ? <Text size="sm">{isDealTotal(l) ? 'Total' : money2(l.unit_price, currency)}</Text> : <NumberInput min={0} decimalScale={2} value={l.unit_price} onChange={(v) => update(l.key, { unit_price: Number(v) || 0 })} w={isDealTotal(l) ? 140 : 110} aria-label={isDealTotal(l) ? 'Total deal value' : 'Unit price'} prefix={currency === 'EUR' ? '€' : currency === 'USD' ? '$' : `${currency} `} thousandSeparator />}
+                  {readOnly ? <Text size="sm">{isDealTotal(l) ? 'Total' : money2(l.unit_price, currency)}</Text> : <NumberInput min={0} decimalScale={2} value={l.unit_price} onChange={(v) => reprice(l.key, { unit_price: Number(v) || 0 })} w={isDealTotal(l) ? 140 : 110} aria-label={isDealTotal(l) ? 'Total deal value' : 'Unit price'} prefix={currency === 'EUR' ? '€' : currency === 'USD' ? '$' : `${currency} `} thousandSeparator />}
                 </Table.Td>
                 <Table.Td>
                   {isDealTotal(l) ? (
                     <Text size="sm" c="dimmed">
                       —
                     </Text>
-                  ) : readOnly ? <Text size="sm">{l.discount_pct}%</Text> : <NumberInput min={0} max={100} decimalScale={2} value={l.discount_pct} onChange={(v) => update(l.key, { discount_pct: Number(v) || 0 })} w={80} suffix="%" />}
+                  ) : readOnly ? <Text size="sm">{l.discount_pct}%</Text> : <NumberInput min={0} max={100} decimalScale={2} value={l.discount_pct} onChange={(v) => reprice(l.key, { discount_pct: Number(v) || 0 })} w={80} suffix="%" />}
                 </Table.Td>
                 <Table.Td>
                   {l.billing_type === 'recurring' && readOnly ? (
                     <Text size="sm">{l.term_months ?? term}</Text>
                   ) : l.billing_type === 'recurring' ? (
-                    <NumberInput min={1} max={120} value={l.term_months ?? ''} placeholder={String(term)} onChange={(v) => update(l.key, { term_months: v === '' ? null : Number(v) })} w={80} />
+                    <NumberInput min={1} max={120} value={l.term_months ?? ''} placeholder={String(term)} onChange={(v) => reprice(l.key, { term_months: v === '' ? null : Number(v) })} w={80} />
                   ) : (
                     <Text size="sm" c="dimmed">
                       —
