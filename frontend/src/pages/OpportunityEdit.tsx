@@ -121,9 +121,11 @@ export default function OpportunityEdit() {
   useEffect(() => {
     if (!f || !books) return
     if (f.price_book_id && brandBooks.some((b) => b.id === f.price_book_id)) return
-    const def = brandBooks.find((b) => b.is_default) ?? brandBooks[0]
+    // an existing deal keeps its currency: only a book in that currency, or none (e.g. a EUR deal from a BMC quote)
+    const pool = existing && f.brand_id === existing.brand_id ? brandBooks.filter((b) => b.currency === existing.currency) : brandBooks
+    const def = pool.find((b) => b.is_default) ?? pool[0]
     if (def && def.id !== f.price_book_id) setF((s) => (s ? { ...s, price_book_id: def.id } : s))
-  }, [brandBooks, books, f])
+  }, [brandBooks, books, f, existing])
 
   const priceBook = books?.find((b) => b.id === f?.price_book_id)
   const { data: products } = useProducts(f?.brand_id)

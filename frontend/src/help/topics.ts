@@ -139,7 +139,9 @@ When a BMC quote with Sentry products comes to you for approval, use **Paste BMC
 2. **Read quote** lists the Sentry products found in the quote, with their quantity, period, discount and total charge. The BMC products are left out. Untick a line to leave it out too.
 3. Pick the customer account (or add it), check the deal type and expected close, and **Create opportunity**.
 
-The opportunity is a Sentry Software deal through BMC MarketZone, referred by BMC, at the "Proposal / Follow-up" stage ("Renewal pending" for a renewal). Each Sentry product becomes a line worth its **total charge** in the quote, with the quantity, list and effective unit prices, discount and dates in its description. The contract runs from the earliest start date to the latest end date. The BMC sales rep named in the approvals becomes the partner contact when they are a contact in the CRM, and the approvals are kept in a note.
+The opportunity is a Sentry Software deal through BMC MarketZone, referred by BMC, at the "Proposal / Follow-up" stage ("Renewal pending" for a renewal). Each Sentry product becomes a line with the quote's **Qty**, its **List Price** as unit price (per month), its **Recurring Discount%** as discount, and its term from the start and end dates. The dialog shows what that comes to next to the quote's **Total Charge**: they often differ, because BMC's effective price is not always list price less the recurring discount. Choose **Total charge in the quote** to make each line worth exactly what BMC charges instead. Either way the total charge, effective price and dates are kept in the line's description.
+
+The opportunity is in the quote's currency. Add a Sentry price book in that currency (for example EUR) under Products & pricing so that the deal is linked to one. The contract runs from the earliest start date to the latest end date. The BMC sales rep named in the approvals becomes the partner contact when they are a contact in the CRM, and the approvals are kept in a note.
 
 > Pasting the same quote twice is caught: the second time you get a link to the opportunity already created.
 

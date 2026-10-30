@@ -1,6 +1,7 @@
 """BMC quotes: paste a quote approval email and get a Sentry opportunity with its Sentry product lines."""
 import datetime as dt
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -34,6 +35,8 @@ class QuoteImport(QuoteText):
     owner_id: int | None = None
     expected_close_date: dt.date | None = None
     skip: list[int] = []  # positions in the preview's Sentry lines to leave out
+    # list: quantity x list price, less the recurring discount; charge: each line worth the quote's total charge
+    pricing: Literal["list", "charge"] = "list"
 
 
 def _parse(text: str) -> bmc_quote.ParsedQuote:
@@ -84,6 +87,19 @@ def _money(cur: str, value: Decimal) -> str:
     return f"{cur} {value:,.2f}"
 
 
+def _line(ln: bmc_quote.QuoteLine, pricing: str) -> LineItemIn:
+    if pricing == "list" and ln.priced:
+        return LineItemIn(name=ln.name[:200], description=ln.description(), quantity=ln.quantity,
+                          unit_price=ln.list_price, discount_pct=ln.recurring_discount, billing_type="recurring",
+                          term_months=ln.term_months)
+    return LineItemIn(name=ln.name[:200], description=ln.description(), quantity=1, unit_price=ln.total_charge,
+                      billing_type="recurring", unit="deal_total", term_months=ln.term_months)
+
+
+def _value(ln: bmc_quote.QuoteLine) -> Decimal:
+    return ln.list_value() if ln.priced else ln.total_charge
+
+
 @router.post("/preview")
 def preview(data: QuoteText, db: Session = Depends(get_db), _: User = Depends(require_writer)):
     """What an import of this quote would create, for the user to check first."""
@@ -101,6 +117,7 @@ def preview(data: QuoteText, db: Session = Depends(get_db), _: User = Depends(re
         "line_count": len(q.lines),
         "quote_total": sum((ln.total_charge for ln in q.lines), Decimal(0)),
         "sentry_total": sum((ln.total_charge for ln in sentry), Decimal(0)),
+        "list_total": sum((_value(ln) for ln in sentry), Decimal(0)),
         "contract_start": min(ln.start for ln in sentry),
         "contract_end": max(ln.end for ln in sentry),
         "deal_type": deal_type,
@@ -111,7 +128,8 @@ def preview(data: QuoteText, db: Session = Depends(get_db), _: User = Depends(re
         "lines": [{
             "name": ln.name, "quantity": ln.quantity, "start": ln.start, "end": ln.end, "term_months": ln.term_months,
             "total_charge": ln.total_charge, "discount_pct": ln.discount_pct, "list_price": ln.list_price,
-            "effective_price": ln.effective_price, "status": ln.status, "action": ln.action,
+            "effective_price": ln.effective_price, "recurring_discount": ln.recurring_discount,
+            "list_value": _value(ln), "priced": ln.priced, "status": ln.status, "action": ln.action,
             "revenue_type": ln.revenue_type,
         } for ln in sentry],
     }
@@ -148,6 +166,8 @@ def import_quote(data: QuoteImport, db: Session = Depends(get_db), user: User = 
         f"Sentry products: {len(lines)} of the quote's {len(q.lines)} lines, {_money(cur, total)} of "
         f"{_money(cur, sum((ln.total_charge for ln in q.lines), Decimal(0)))} (total charges).",
     ]
+    summary.append("Line values: list price less the recurring discount, over each line's term."
+                   if data.pricing == "list" else "Line values: the total charge of each line in the quote.")
     if q.sales_rep:
         summary.append(f"BMC sales rep: {q.sales_rep}.")
     opp = create_opportunity(OpportunityCreate(
@@ -157,13 +177,13 @@ def import_quote(data: QuoteImport, db: Session = Depends(get_db), user: User = 
         referring_platform_id=platform.id if platform else None, partner_contact_id=rep.id if rep else None,
         price_book_id=book.id if book else None, currency=cur, contract_start=start, contract_end=end,
         expected_close_date=data.expected_close_date or start, description="\n".join(summary),
-        line_items=[LineItemIn(name=ln.name[:200], description=ln.description(), quantity=1,
-                               unit_price=ln.total_charge, billing_type="recurring", unit="deal_total",
-                               term_months=ln.term_months) for ln in lines],
+        line_items=[_line(ln, data.pricing) for ln in lines],
     ), db, user)
 
     row = db.get(Opportunity, opp.id)
     row.external_source, row.external_id = SOURCE, q.fingerprint()
+    if not book:  # no Sentry price book in the quote's currency: keep the quote's currency, not the default book's
+        row.price_book_id, row.currency = None, cur
     body = ["Sentry lines:"] + [f"- {ln.name}: {_money(cur, ln.total_charge)} ({ln.description()})" for ln in lines]
     if q.approvals:
         body += ["", "Approvals:"] + [f"- {a.step}: {a.status} {a.date}, {a.assigned_to}" for a in q.approvals]

@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from .pricing import months_between
+from .pricing import line_total, months_between
 
 # BMC product names of Sentry products (OnPrem and SaaS). Any product with "Sentry" in its name counts too.
 SENTRY_PRODUCTS = [
@@ -100,6 +100,7 @@ class QuoteLine:
     sentry: bool
     status: str | None = None
     list_price: Decimal | None = None
+    recurring_discount: Decimal | None = None
     effective_price: Decimal | None = None
 
     @property
@@ -107,17 +108,26 @@ class QuoteLine:
         return max(months_between(self.start, self.end), 1)
 
     @property
+    def priced(self) -> bool:
+        """The pricing table gave this line a list price and a recurring discount."""
+        return self.list_price is not None and self.recurring_discount is not None and self.quantity > 0
+
+    def list_value(self) -> Decimal:
+        """The line's value in the CRM from its list price and recurring discount."""
+        return line_total(self.quantity, self.list_price, self.recurring_discount, self.term_months, "recurring")
+
+    @property
     def action(self) -> str:
         return self.details.split(" ")[-1] if self.details else ""
 
     def description(self) -> str:
         """What the CRM line keeps of the quote line."""
-        parts = [f"Qty {self.quantity.normalize():,f}"]
+        parts = [f"Qty {self.quantity.normalize():,f}", f"total charge {self.currency} {self.total_charge:,.2f}"]
         if self.list_price is not None:
             parts.append(f"list {self.currency} {self.list_price:,.2f}/unit")
         if self.effective_price is not None:
             parts.append(f"effective {self.currency} {self.effective_price:,.2f}/unit")
-        parts.append(f"discount {self.discount_pct}%")
+        parts.append(f"total discount {self.discount_pct}%")
         parts.append(f"{self.start:%d %b %Y} to {self.end:%d %b %Y}")
         if self.status:
             parts.append(self.status)
@@ -193,6 +203,7 @@ def parse(text: str) -> ParsedQuote:
         if ln and ln.list_price is None:
             ln.status, _ = _split_mid(m["mid"].strip())
             ln.list_price, ln.effective_price = _dec(m["list"]), _dec(m["eff"])
+            ln.recurring_discount = _dec(m["disc"])
 
     approvals = []
     for raw in (text or "").splitlines():
