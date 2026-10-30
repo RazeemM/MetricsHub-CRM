@@ -6,6 +6,7 @@ The approval email has an "Approvals List" and two product tables, one row per p
   * Additional Pricing: Revenue Type | Product Name | Product Status | Product Line | Action | List Price
     | Recurring Discount% | Total One Time Discount | One Time Discount Reasons | BRV/Unit | ERV/Unit
     | Effective Price | YORG %
+SaaS quotes have no BRV and ERV columns, and their YORG % can be empty.
 Copied from Outlook or a browser the cells are separated by tabs; copied from a PDF they are separated by spaces and
 long names wrap onto several lines. So rows are read from the text with all whitespace collapsed, by their shape:
 a product name ending in " : <licence model>" followed by the numbers and dates of that table.
@@ -46,11 +47,11 @@ NAME = rf"(?P<name>[A-Za-z0-9(]{NO_DATE}{{2,240}}? : (?:OPS|SaaS|SAAS|[A-Z]{{2,6
 
 GENERAL = re.compile(
     rf"\b(?P<rev>{REVENUE}) {NAME} (?P<mid>{NO_DATE}{{0,120}}?) ?(?P<disc>{NUM}) (?P<qty>{NUM}) "
-    rf"(?P<start>{DATE}) (?P<end>{DATE}) (?P<brv>{MONEY}) (?P<erv>{MONEY}) (?P<charge>{MONEY}) "
+    rf"(?P<start>{DATE}) (?P<end>{DATE}) (?:(?P<brv>{MONEY}) (?P<erv>{MONEY}) )?(?P<charge>{MONEY}) "
     rf"(?P<cur>[A-Z]{{3}}) ?(?P<acv>{MONEY})")
 PRICING = re.compile(
     rf"\b(?P<rev>{REVENUE}) {NAME} (?P<mid>[^\d]{{0,80}}?) ?(?P<list>{MONEY}) (?P<disc>{NUM}) (?P<otd>{MONEY}) "
-    rf"(?:(?P<reason>[^\d]{{1,160}}?) )?(?P<brvu>{MONEY}) (?P<ervu>{MONEY}) (?P<eff>{MONEY}) (?P<yorg>{NUM}) ?%")
+    rf"(?:(?P<reason>[^\d]{{1,160}}?) )?(?:(?P<brvu>{MONEY}) (?P<ervu>{MONEY}) )?(?P<eff>{MONEY}) (?:(?P<yorg>{NUM}) ?)?%")
 STATUSES = ("Generally Available", "Withdrawn", "Transition", "Controlled Availability", "End of Life", "Retired")
 APPROVAL_STATUS = r"On Hold|Assigned|Notified|Approved|Rejected|Pending|Completed|Skipped|Cancell?ed|Recalled"
 APPROVAL = re.compile(rf"^(?P<step>.+?)\s+(?P<status>{APPROVAL_STATUS})\s+(?P<date>{DATE})\s+"

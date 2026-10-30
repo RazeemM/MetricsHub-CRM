@@ -1,5 +1,6 @@
 import datetime as dt
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -166,3 +167,24 @@ def test_fixed_total_survives_an_edit_and_wins_over_the_price(client):
     r = client.patch(f"/api/opportunities/{o['id']}", json={"line_items": lines})
     assert r.status_code == 200, r.text
     assert Decimal(r.json()["amount_tcv"]) == Decimal("50160.50")
+
+
+SAAS_QUOTE = (Path(__file__).parent / "fixtures" / "bmc_quote_saas.txt").read_text(encoding="utf-8")
+
+
+def test_saas_quote_without_brv_erv_columns(client):
+    # SaaS quotes have no Expected BRV / ERV columns, no BRV / ERV per unit and an empty YORG %
+    q = parse(SAAS_QUOTE)
+    assert len(q.lines) == 3 and (q.quote_number, q.customer) == ("Q137501", "State Employees Credit Union")
+    (line,) = q.sentry_lines
+    assert line.name == "Sentry Bundle for BMC Helix Operations Management - MZ : resource unit : SaaS"
+    assert (line.quantity, line.total_charge, line.term_months) == (78, Decimal("14376.96"), 36)
+    assert (line.list_price, line.recurring_discount, line.effective_price) == (
+        Decimal("80.18"), Decimal("89.36"), Decimal("5.12"))
+    assert q.sales_rep == "Michael Loftin" and len(q.approvals) == 5
+
+    acct = client.post("/api/accounts", json={"name": "State Employees Credit Union", "account_type": "customer"}).json()
+    p = client.post("/api/opportunities/bmc-quote/preview", json={"text": SAAS_QUOTE}).json()
+    assert p["account"]["id"] == acct["id"] and p["deal_type"] == "new"
+    o = client.post("/api/opportunities/bmc-quote", json={"text": SAAS_QUOTE, "account_id": acct["id"]}).json()
+    assert Decimal(o["amount_tcv"]) == Decimal("14376.96") and o["term_months"] == 36

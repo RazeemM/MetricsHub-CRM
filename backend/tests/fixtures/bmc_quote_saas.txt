@@ -1,0 +1,102 @@
+To approve or reject this request, reply to this email with the word APPROVE, APPROVED, YES, REJECT, REJECTED, or NO in the first line of the email message, and any comments you have beginning on the second line. Alternatively, you can use the links at the bottom of this notice to login to SFDC and act on this Quote.
+QUOTE DETAILS
+Opportunity Id 	SFDC-934927
+Expected Close Date 	11-DEC-2026
+Quote Number 	Q137501
+Quote Name 	State Employees Credit Union_Mainline_SaaS 3Yr
+Account 	State Employees Credit Union
+Geo/Territory 	NA West
+Customer Tier 	Strategic
+Subscription Number 	New
+Partner Name 	Mainline Information Systems, LLC
+Defined End User (DEU)
+Credit Status 	Good
+Deal Type 	Indirect
+Includes Deal Registration Discount 	No
+Financed Deal 	False
+ELO 	False
+Migration/Conversion/Replacement 	False
+Global Order 	False
+Approval Owner 	Michael Loftin
+
+
+Approvals List
+Step Name	Approval Status	Date	Assigned To	Depends On	Actual Approver	Approver Comments
+Notification to Sales Rep	Notified	21-OCT-2026 	Michael Loftin
+Helix - Zuora Deal Score SaaS - Geo Product Line Specialist and Product Line Finance Mgr	Notified	21-OCT-2026 	Katie Carty Tierney
+Helix - Zuora Deal Score SaaS - Geo Product Line Specialist and Product Line Finance Mgr	Assigned	21-OCT-2026 	Scott Wiser
+Helix - Zuora Approval for Strategic Growth Deals	Notified	21-OCT-2026 	Raul Alvarez
+Marketzone Products Approval	Assigned	21-OCT-2026 	Tejas Rudrakanthwar
+
+
+
+Product Details - General Information
+Revenue Type	Product Name	Support Tier	Product Line	Action	Total Discount	Qty	Start Date	End Date	Total Charge (USD)	ACV	Subprocessor Update Justification
+SaaS	BMC Helix AIOps - Advanced : resource unit : SaaS	BMC SaaS Support	ITOM	NewProduct	91.14 	7000	1-DEC-2026	30-NOV-2029	2,097,581.67 	USD 699,193.89 (USD 699,193.89) 	-
+SaaS	Netreo DEM Microsoft 365 Insight Central Monitoring SaaS : enterprise : SaaS	BMC SaaS Support	ITOM	NewProduct	89.36 	1	1-DEC-2026	30-NOV-2029	3,041.37 	USD 1,013.79 (USD 1,013.79) 	-
+SaaS	Sentry Bundle for BMC Helix Operations Management - MZ : resource unit : SaaS	BMC SaaS Support	ITOM	NewProduct	89.36 	78	1-DEC-2026	30-NOV-2029	14,376.96 	USD 4,792.32 (USD 4,792.32) 	-
+
+
+Product Details - Additional Pricing Information
+Revenue Type	Product Name	Product Status	Product Line	Action	List Price (USD)	Recurring Discount%	Total One Time Discount	One Time Discount Reasons	Effective Price (USD)	YORG %
+SaaS	BMC Helix AIOps - Advanced : resource unit : SaaS	Generally Available	ITOM	NewProduct	156.65 	91.14 	0.00 		8.32 	%
+SaaS	Netreo DEM Microsoft 365 Insight Central Monitoring SaaS : enterprise : SaaS	Generally Available	ITOM	NewProduct	1,323.00 	89.36 	0.00 		84.48 	%
+SaaS	Sentry Bundle for BMC Helix Operations Management - MZ : resource unit : SaaS	Generally Available	ITOM	NewProduct	80.18 	89.36 	0.00 		5.12 	%
+
+
+TRANSACTION SUMMARY
+Total List Price (USD) 	(USD) 39,748,573.44
+Total Fee (USD) 	(USD) 2,115,000.00
+Total ACV (USD) 	USD 705,000.00 (USD 705,000.00)
+Total ITSM ACV (USD) 	(USD) 0.00
+Total Perpetual License Fee 	USD 0.00
+Total Perpetual Support Fee 	USD 0.00
+Total OPS Fee 	USD 0.00
+Total SaaS Fee 	USD 2,115,000.00
+Total Platform Fee 	USD 0.00
+Total Consulting Services Fee 	USD 0.00
+Total Education Fee 	USD 0.00
+Total YORG 	0.00%
+Subscription Start Date 	01-DEC-2026
+Subscription End Date 	30-NOV-2029
+* The ACV values represented in this approval email follow BMC's Financial Reporting methodology, but should not be used as basis for compensation calculations.
+
+
+DEAL SCORE
+Deal Type	Score	CutOff
+SaaS Other	B	93.0286000
+
+
+
+Quote Metrics
+SUBSCRIPTION LIFETIME BILLING 	2,115,000.00 (USD)
+FUTURE BILLING/INSTALLMENTS (PRIOR AND CURRENT ORDERS) 	2,115,000.00 (USD)
+GROSS MONTHLY RECURRING REVENUE 	58,750.00 (USD)
+NET MONTHLY RECURRING REVENUE 	58,750.00 (USD)
+
+
+SSP Ranges
+Product Family	Low	High
+ITOM SaaS	66.24	99.36
+
+
+Deal Rationale
+Working on pricing with BP and Katie Tierney, based on an agreement to go 30% lower than the floor. We positioned the same pricing model last fiscal year and honoring that price this fiscal. **Replicated Quote Q107978 - system issues
+
+
+ADDITIONAL TRANSACTION DETAILS
+Ramp Deal 	False
+Bucket Deal 	False
+Global Order 	False
+Billing 	Installment
+
+
+
+For additional details, click on the link below to access the Quote:
+State Employees Credit Union_Mainline_SaaS 3Yr
+
+
+
+Reassign
+Approve/Reject
+Add Comment
