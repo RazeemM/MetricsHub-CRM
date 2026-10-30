@@ -93,7 +93,7 @@ export default function MarketingOverview() {
   const e = data?.email
   return (
     <>
-      <PageHeader
+      <PageHeader help="campaigns"
         title="Marketing"
         subtitle="Email campaigns and newsletters, the audiences and lists they go to, and how they perform"
         actions={
@@ -328,7 +328,7 @@ export function Audiences() {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <PageHeader
+      <PageHeader help="audiences-lists"
         title="Audiences"
         subtitle="Saved filters on your contacts. Campaigns sent to an audience go to whoever matches on the day they are sent."
         actions={

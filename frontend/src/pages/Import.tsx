@@ -133,7 +133,7 @@ export default function ImportPage() {
 
   return (
     <>
-      <PageHeader
+      <PageHeader help="import-export"
         title="Import / export"
         subtitle="Load leads and accounts from Excel or CSV; export any list"
         actions={

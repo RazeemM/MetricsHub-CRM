@@ -134,7 +134,7 @@ export default function QuoteTemplates() {
 
   return (
     <>
-      <PageHeader
+      <PageHeader help="pricing-admin"
         title="Quote templates"
         subtitle="One template per brand. Quotes keep the template as it was when they were generated."
         actions={

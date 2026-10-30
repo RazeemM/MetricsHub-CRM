@@ -45,6 +45,7 @@ export default function Opportunities() {
     <>
       <PageHeader
         title="Opportunities"
+        help="opportunities"
         actions={
           <>
             <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => download('/export/opportunities', { q: debounced, status: params.status, brand_id: params.brand_id })}>

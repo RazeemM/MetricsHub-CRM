@@ -9,6 +9,7 @@ import ContactDetail from './pages/ContactDetail'
 import Contacts from './pages/Contacts'
 import Campaigns, { CampaignDetail } from './pages/Campaigns'
 import Dashboard from './pages/Dashboard'
+import Help from './pages/Help'
 import EmailTemplates, { EmailTemplateEdit } from './pages/EmailTemplates'
 import ImportPage from './pages/Import'
 import Insights from './pages/Insights'
@@ -78,6 +79,8 @@ export default function App() {
         <Route path="/system" element={<SystemStatus />} />
         <Route path="/web-forms" element={<WebForms />} />
         <Route path="/tracking" element={<WebsiteTracking />} />
+        <Route path="/help" element={<Help />} />
+        <Route path="/help/:topic" element={<Help />} />
         <Route path="/web-forms/:id" element={<WebFormDetail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

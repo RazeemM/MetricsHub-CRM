@@ -115,7 +115,7 @@ export default function MailingLists() {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <PageHeader
+      <PageHeader help="audiences-lists"
         title="Mailing lists"
         subtitle="Who campaigns and newsletters go to"
         actions={

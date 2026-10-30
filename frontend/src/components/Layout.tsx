@@ -8,6 +8,7 @@ import {
   Menu,
   NavLink,
   Text,
+  Tooltip,
   useMantineColorScheme,
 } from '@mantine/core'
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks'
@@ -16,6 +17,7 @@ import {
   IconBuilding,
   IconFileImport,
   IconFileInvoice,
+  IconHelp,
   IconHeartbeat,
   IconLayoutDashboard,
   IconLayoutKanban,
@@ -38,7 +40,7 @@ import {
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { fmtDate } from '../labels'
@@ -129,7 +131,7 @@ export default function Layout() {
   const marketing = isAdmin
     ? [...MARKETING, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }, { to: '/tracking', label: 'Website tracking', icon: IconCode }]
     : MARKETING
-  const tail = [{ to: '/import', label: 'Import / export', icon: IconFileImport }, ...(isAdmin ? [{ to: '/users', label: 'Users', icon: IconUsers }, { to: '/system', label: 'System status', icon: IconHeartbeat }] : [])]
+  const tail = [{ to: '/import', label: 'Import / export', icon: IconFileImport }, ...(isAdmin ? [{ to: '/users', label: 'Users', icon: IconUsers }, { to: '/system', label: 'System status', icon: IconHeartbeat }] : []), { to: '/help', label: 'Help', icon: IconHelp }]
   const active = (to: string, exact?: boolean) => (to === '/' || exact ? loc.pathname === to : loc.pathname.startsWith(to))
   const inMarketing = marketing.some((it) => active(it.to, 'exact' in it && it.exact))
   const link = (it: { to: string; label: string; icon: typeof IconMail; exact?: boolean }) => (
@@ -159,6 +161,11 @@ export default function Layout() {
           </Group>
           <GlobalSearch />
           <Group gap="xs" wrap="nowrap">
+            <Tooltip label="Help">
+              <ActionIcon variant="subtle" component={Link} to="/help" aria-label="Help">
+                <IconHelp size={18} />
+              </ActionIcon>
+            </Tooltip>
             <NotificationsBell />
             <ActionIcon variant="subtle" onClick={toggleColorScheme} aria-label="Toggle color scheme">
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}

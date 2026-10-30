@@ -33,6 +33,7 @@ export default function Accounts() {
     <>
       <PageHeader
         title="Accounts"
+        help="accounts-contacts"
         subtitle="Customers, prospects, platform partners and resellers"
         actions={
           <>

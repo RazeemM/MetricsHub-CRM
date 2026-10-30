@@ -74,7 +74,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader
+      <PageHeader help="dashboard"
         title={`Hello ${user?.full_name.split(' ')[0] ?? ''}`}
         subtitle="Pipeline overview"
         actions={<Select placeholder="All brands" data={(brands ?? []).map((b) => ({ value: String(b.id), label: b.name }))} value={brandId} onChange={setBrandId} clearable w={200} />}

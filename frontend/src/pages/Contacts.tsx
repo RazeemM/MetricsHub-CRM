@@ -74,7 +74,7 @@ export default function Contacts() {
 
   return (
     <>
-      <PageHeader
+      <PageHeader help="accounts-contacts"
         title="Contacts"
         subtitle="Leads, customer contacts and platform account managers"
         actions={

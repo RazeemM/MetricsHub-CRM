@@ -74,6 +74,7 @@ export default function PipelineBoard() {
     <>
       <PageHeader
         title="Pipeline"
+        help="pipeline"
         actions={
           canWrite && (
             <Button component={Link} to="/opportunities/new" leftSection={<IconPlus size={16} />}>

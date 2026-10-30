@@ -281,6 +281,7 @@ export default function WebsiteTracking() {
   const header = (
     <PageHeader
       title="Website tracking"
+      help="website-tracking"
       subtitle="Bring in leads from your websites, see the pages they visit and where they came from"
       actions={
         <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setAdding(true)}>

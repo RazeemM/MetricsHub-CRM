@@ -98,7 +98,7 @@ export default function WebForms() {
   const { data: lists } = useLists()
   return (
     <>
-      <PageHeader
+      <PageHeader help="web-forms"
         title="Website forms"
         subtitle="Contact, quote, trial, download, partner and newsletter forms that create contacts in the CRM"
         actions={

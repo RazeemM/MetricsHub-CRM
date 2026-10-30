@@ -104,7 +104,7 @@ export default function Campaigns() {
   )
   return (
     <>
-      <PageHeader
+      <PageHeader help="campaigns"
         title="Campaigns & newsletters"
         subtitle="Bulk email to your lists, with opens, clicks and unsubscribes"
         actions={

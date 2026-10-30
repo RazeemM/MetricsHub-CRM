@@ -1,4 +1,6 @@
-import { Badge, Group, Pagination, Select, Stack, Text, Title, type SelectProps } from '@mantine/core'
+import { ActionIcon, Badge, Group, Pagination, Select, Stack, Text, Title, Tooltip, type SelectProps } from '@mantine/core'
+import { IconHelp } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
 import { useDebouncedValue } from '@mantine/hooks'
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
@@ -7,11 +9,21 @@ import type { Account, Contact } from '../types'
 import { AccountFormModal, ContactFormModal } from './forms'
 import { ACCOUNT_TYPE_COLORS, ACCOUNT_TYPES, LIFECYCLE_COLORS, LIFECYCLES } from '../labels'
 
-export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
+/** Page title, subtitle and actions. `help` names a help topic, linked from a (?) next to the title. */
+export function PageHeader({ title, subtitle, actions, help }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; help?: string }) {
   return (
     <Group justify="space-between" mb="md" align="flex-start" wrap="wrap">
       <Stack gap={2}>
-        <Title order={2}>{title}</Title>
+        <Group gap={6} wrap="nowrap">
+          <Title order={2}>{title}</Title>
+          {help && (
+            <Tooltip label="Help for this page">
+              <ActionIcon variant="subtle" color="gray" component={Link} to={`/help/${help}`} aria-label="Help for this page">
+                <IconHelp size={18} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
         {subtitle && (
           <Text c="dimmed" size="sm">
             {subtitle}

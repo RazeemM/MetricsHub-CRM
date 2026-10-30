@@ -11,6 +11,8 @@ A standalone CRM for **Sentry Software** and **MetricsHub** deals. It tracks the
 | Deployment | Docker Compose: Postgres, API, nginx, nightly `pg_dump` backups |
 | Quote PDFs | Jinja2 HTML template rendered by WeasyPrint |
 
+**Help** (the ? in the header, or *Help* in the menu) explains how to use and configure the CRM, with best practices and troubleshooting; pages link to their topic from the ? next to their title. The topics are Markdown in `frontend/src/help/topics.ts`: update them when a feature changes.
+
 ## What's in phase 1
 
 - **Accounts:**

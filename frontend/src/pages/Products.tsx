@@ -176,7 +176,7 @@ export default function Products() {
 
   return (
     <>
-      <PageHeader title="Products & pricing" subtitle="Catalog and price books used to value opportunities" />
+      <PageHeader help="pricing-admin" title="Products & pricing" subtitle="Catalog and price books used to value opportunities" />
       <Alert variant="light" color="orange" mb="md" title="Placeholder prices">
         Apart from MetricsHub Enterprise ($15/host/month) and the two Sentry bundles, prices are placeholders. Admins can change them under
         Price books; new opportunities pick up the new prices, and existing ones keep theirs.

@@ -136,6 +136,7 @@ export default function SystemStatus() {
     <>
       <PageHeader
         title="System status"
+        help="monitoring"
         subtitle="Health checks and usage statistics. MetricsHub and Prometheus read the same figures: see Monitoring in the README."
         actions={
           <Button variant="default" leftSection={<IconRefresh size={16} />} loading={isFetching} onClick={() => refetch()}>

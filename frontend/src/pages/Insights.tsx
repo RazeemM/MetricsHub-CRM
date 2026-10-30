@@ -491,7 +491,7 @@ export default function Insights() {
   const tab = params.get('tab') ?? 'renewals'
   return (
     <>
-      <PageHeader title="Insights" subtitle="Licences from the BMC MarketZone reports: where to focus" />
+      <PageHeader title="Insights" help="insights" subtitle="Licences from the BMC MarketZone reports: where to focus" />
       <Tabs value={tab} onChange={(v) => setParams(v ? { tab: v } : {}, { replace: true })} keepMounted={false}>
         <Tabs.List mb="md">
           {TABS.map((t) => (

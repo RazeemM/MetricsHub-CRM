@@ -72,7 +72,7 @@ export default function Users() {
   if (!isAdmin) return <Navigate to="/" />
   return (
     <>
-      <PageHeader
+      <PageHeader help="users-sso"
         title="Users"
         subtitle="People who can sign in to the CRM. With SSO, users from allowed domains are created on first sign-in."
         actions={

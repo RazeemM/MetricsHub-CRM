@@ -50,7 +50,7 @@ export default function EmailTemplates() {
 
   return (
     <>
-      <PageHeader
+      <PageHeader help="campaigns"
         title="Email templates"
         subtitle="Reusable designs for campaigns and newsletters"
         actions={
