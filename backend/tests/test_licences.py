@@ -495,3 +495,59 @@ def test_bulk_resolve_and_later_purchase_hint(client):
     assert r.status_code == 200 and r.json() == {"resolved": 2}
     still = {h["account_name"] for h in client.get("/api/licences/lapsed").json()}
     assert not still & {"Bulkone LLC", "Bulktwo LLC"}
+
+
+def test_renewal_invoiced_under_another_name_of_the_customer_goes_to_the_renewed_account(client):
+    # BMC invoices one customer under two of its company names in turn; each renewal continues the last period
+    y = TODAY.year
+
+    def ln(doc, customer, start, end):
+        return ReportLine(doc_number=doc, doc_date=start, customer=customer, country="Spain",
+                          billing_company="Telco Resale Cloud SLU", product="Sentry Storage Monitor for BMC Helix "
+                          "Operations Management", license_type="saas", start=start, end=end, term_days=365,
+                          quantity=Decimal("242"), net=Decimal("6181.60"), fee=Decimal("3152.62"), page=2)
+    first = ln("ALT1", "Vigilantia Gestion de Activos SLU", dt.date(y - 3, 9, 9), dt.date(y - 2, 9, 8))
+    second = ln("ALT2", "VIGILANTIA Compañía de Seguridad, S.A.", dt.date(y - 2, 9, 9), dt.date(y - 1, 9, 8))
+    third = ln("ALT3", "Vigilantia Gestion de Activos SLU", dt.date(y - 1, 9, 9), dt.date(y, 9, 8))
+    with SessionLocal() as db:
+        ent.import_report(db, Report(title="t", lines=[first], warnings=[]), "y1.xlsx", dry_run=False)
+        res = ent.import_report(db, Report(title="t", lines=[second], warnings=[]), "y2.xlsx", dry_run=False)
+        # the first renewal already continues the first account's licence
+        assert res.accounts_matched == {
+            "VIGILANTIA Compañía de Seguridad, S.A.": "Vigilantia Gestion de Activos SLU (renews its Sentry Storage "
+                                                     "Monitor for BMC Helix Operations Management)"}
+        res = ent.import_report(db, Report(title="t", lines=[third], warnings=[]), "y3.xlsx", dry_run=False)
+        rows = db.query(Entitlement).filter(Entitlement.source_ref.in_(["ALT1", "ALT2", "ALT3"])).all()
+        assert len({r.account_id for r in rows}) == 1 and not res.accounts_created
+
+
+def test_names_match_without_accents_or_spanish_legal_forms():
+    assert ent.norm_name("PROSEGUR Compañía de Seguridad, S.A.") == ent.norm_name("Prosegur Compania de Seguridad SA")
+    assert ent.norm_name("Gestion de Activos S.L.U.") == ent.norm_name("Gestion de Activos SLU") == "gestion de activos"
+
+
+def test_lapse_closes_when_its_renewal_was_imported_under_the_other_company_name(client):
+    # imported before the fix: the lapsed licence on one account, its renewal on the customer's other account
+    from app.models import Account, Brand
+    y = TODAY.year
+    with SessionLocal() as db:
+        brand = db.query(Brand).filter(Brand.code == "SENTRY").one()
+        telco = Account(name="Splitco Reseller SLU", account_type="reseller", extra={})
+        old = Account(name="SPLITCO Seguridad, S.A.", account_type="customer", extra={})
+        new = Account(name="Splitco Gestion SLU", account_type="customer", extra={})
+        db.add_all([telco, old, new])
+        db.flush()
+        common = dict(brand_id=brand.id, reseller_id=telco.id, product_name="Sentry Storage Monitor for BMC Helix "
+                      "Operations Management", license_type="saas", quantity=Decimal("77"), currency="USD",
+                      source="bmc_mzd", report_name="Sentry MZD Sept Detail.xlsx")
+        db.add_all([
+            Entitlement(account_id=old.id, start_date=dt.date(y - 3, 9, 9), end_date=dt.date(y - 2, 9, 8),
+                        document_date=dt.date(y - 3, 9, 9), source_ref="SPL1", line_key="SPL1", **common),
+            Entitlement(account_id=new.id, start_date=dt.date(y - 2, 9, 9), end_date=dt.date(y - 1, 9, 8),
+                        document_date=dt.date(y - 2, 9, 9), source_ref="SPL2", line_key="SPL2", **common)])
+        db.commit()
+        assert ent.auto_close_lapsed(db) >= 1
+        db.commit()
+    closed = next(h for h in client.get("/api/licences/lapsed", params={"include_resolved": True}).json()
+                  if h["account_name"] == "SPLITCO Seguridad, S.A.")
+    assert closed["resolved"] and "under Splitco Gestion SLU" in closed["resolution"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -15,12 +16,15 @@ from .config import get_settings
 from .models import Account, Brand, Entitlement, Notification, Opportunity, Pipeline, Stage, User
 from .mzd_report import Report
 
-LEGAL = re.compile(r"\b(inc|incorporated|llc|ltd|limited|plc|corp|corporation|co|kg|gmbh|ag|sa|s a|sas|bv|b v|nv|"
-                   r"spa|srl|pte|pvt|private|company|wll|the)\b")
+LEGAL = re.compile(r"\b(inc|incorporated|llc|ltd|ltda|limited|plc|corp|corporation|co|kg|gmbh|ag|s a u|sau|sa|s a|"
+                   r"s l u|slu|s l|sl|sas|sarl|bv|b v|nv|spa|srl|pte|pvt|private|company|wll|the)\b")
 
 
 def norm_name(name: str) -> str:
-    s = re.sub(r"[^\w\s]", " ", (name or "").lower())
+    # "Compañía, S.A." and "Compania SA" are one name: accents and legal forms are left out
+    s = unicodedata.normalize("NFKD", (name or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^\w\s]", " ", s)
     s = LEGAL.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
 
@@ -176,6 +180,41 @@ class AccountMatcher:
         return a, True
 
 
+CONTINUES_DAYS = 7  # a renewal starts the day after the previous period ends, give or take a few days
+
+
+def _first_word(name: str) -> str:
+    return (norm_name(name).split() or [""])[0]
+
+
+def _sold_by(e: Entitlement) -> str:
+    return norm_name(e.reseller.name if e.reseller else e.account.name)
+
+
+def _continued_account(db: Session, ln, exact: Account | None) -> Account | None:
+    """The account whose licence this report line renews, when BMC invoiced it under another name of the customer
+    ("PROSEGUR Compañía de Seguridad, S.A." one year, "Prosegur Gestion de Activos SLU" the next). A renewal: same
+    product family, reseller and quantity, starting when the other account's licence ended, and a name starting with
+    the same word. None when the line's own account holds that licence itself, or when it is not clear-cut."""
+    from .product_families import family
+
+    if ln.license_type == "perpetual" or not ln.start or ln.quantity <= 0:
+        return None
+    word = _first_word(ln.customer)
+    if len(word) < 3:
+        return None
+    fam = family(ln.product)
+    reseller = norm_name(ln.billing_company or ln.customer)
+    prior = [e for e in db.scalars(select(Entitlement).where(
+        Entitlement.quantity == ln.quantity, Entitlement.license_type != "perpetual",
+        Entitlement.end_date >= ln.start - dt.timedelta(days=CONTINUES_DAYS), Entitlement.end_date < ln.start))
+        if family(e.product_name) == fam and _sold_by(e) == reseller]
+    if exact and any(e.account_id == exact.id for e in prior):
+        return None
+    accounts = {e.account_id: e.account for e in prior if _first_word(e.account.name) == word}
+    return next(iter(accounts.values())) if len(accounts) == 1 else None
+
+
 def _fill_country(db: Session, account_id: int, country: str) -> None:
     acc = db.get(Account, account_id)
     if acc and not acc.country:
@@ -219,9 +258,15 @@ def import_report(db: Session, report: Report, report_name: str, *, dry_run: boo
                     _fill_country(db, old.account_id, ln.country)
             continue
         existing.add(key)
-        acc, created = matcher.get_or_create(ln.customer, ln.country, "customer")
+        if renewed := _continued_account(db, ln, matcher.find(ln.customer)):
+            acc, created = renewed, False
+            res.accounts_matched[ln.customer] = f"{acc.name} (renews its {ln.product})"
+        else:
+            acc, created = matcher.get_or_create(ln.customer, ln.country, "customer")
         if created:
             res.accounts_created.append(ln.customer)
+        elif renewed:
+            pass
         elif norm_name(acc.name) != norm_name(ln.customer) or acc.name != ln.customer:
             res.accounts_matched[ln.customer] = acc.name
         if acc.account_type == "prospect":
@@ -339,6 +384,21 @@ def resolve(db: Session, line_ids: list[int], user_id: int | None, note: str | N
     return n
 
 
+def _renewed_elsewhere(db: Session, h: Holding, line: Entitlement, family) -> list[Entitlement]:
+    """Lines that renew a lapsed licence on another account of the customer (the rule of _continued_account), for
+    renewals imported before it, or imported under the other name because that account already held the product."""
+    word = _first_word(h.account_name)
+    if len(word) < 3 or not h.renewal_date:
+        return []
+    found = [e for e in db.scalars(select(Entitlement).where(
+        Entitlement.account_id != h.account_id, Entitlement.quantity == h.quantity,
+        Entitlement.license_type != "perpetual", Entitlement.start_date > h.renewal_date,
+        Entitlement.start_date <= h.renewal_date + dt.timedelta(days=CONTINUES_DAYS)))
+        if family(e.product_name) == family(h.product_name) and _sold_by(e) == _sold_by(line)
+        and _first_word(e.account.name) == word]
+    return found if len({e.account_id for e in found}) == 1 else []
+
+
 def auto_close_lapsed(db: Session, today: dt.date | None = None) -> int:
     """Close lapsed licences that were renewed after all: any imported line (any report, or added by hand) for the
     same customer and product family with dates after the lapsed renewal date. TrueSight, BMC Helix and OnPrem names
@@ -358,6 +418,9 @@ def auto_close_lapsed(db: Session, today: dt.date | None = None) -> int:
         mine = set(h.lines)
         renewals = [e for e in later[(h.account_id, family(h.product_name))] if e.id not in mine and (
             (e.end_date and e.end_date > h.renewal_date) or (e.start_date and e.start_date > h.renewal_date))]
+        line = db.get(Entitlement, h.latest_line_id)
+        if not renewals:
+            renewals = _renewed_elsewhere(db, h, line, family)
         if not renewals:
             continue
         r = max(renewals, key=lambda e: (e.end_date or e.start_date, e.id))
@@ -365,9 +428,9 @@ def auto_close_lapsed(db: Session, today: dt.date | None = None) -> int:
                                                                             else r.source)
         period = f"{r.start_date:%d %b %Y} – {r.end_date:%d %b %Y}" if r.start_date and r.end_date else \
             f"from {(r.start_date or r.end_date):%d %b %Y}"
-        line = db.get(Entitlement, h.latest_line_id)
+        under = f" under {r.account.name}" if r.account_id != h.account_id else ""
         line.lapse_resolved_at, line.lapse_resolved_by_id = now, None
-        line.lapse_resolution = (f"Closed automatically: renewed as {r.product_name}, {period}"
+        line.lapse_resolution = (f"Closed automatically: renewed as {r.product_name}{under}, {period}"
                                  f" ({where}{', ' + r.source_ref if r.source_ref else ''})")[:2000]
         closed += 1
     db.flush()
