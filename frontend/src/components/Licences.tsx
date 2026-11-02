@@ -516,6 +516,7 @@ interface ImportResult {
   already_imported: number
   fees_filled: number
   countries_filled: number
+  lapsed_closed: number
   accounts_matched: Record<string, string>
   accounts_created: string[]
   resellers: Record<string, string>
@@ -561,7 +562,7 @@ export function MzdImport() {
         <Button variant="default" disabled={!file} loading={run.isPending && !run.variables} onClick={() => run.mutate(false)}>
           Dry run
         </Button>
-        <Button disabled={!file || !result?.dry_run || !result.reliable || (result.created === 0 && !result.fees_filled && !result.countries_filled)} loading={run.isPending && !!run.variables} onClick={() => run.mutate(true)}>
+        <Button disabled={!file || !result?.dry_run || !result.reliable || (result.created === 0 && !result.fees_filled && !result.countries_filled && !result.lapsed_closed)} loading={run.isPending && !!run.variables} onClick={() => run.mutate(true)}>
           Import licences
         </Button>
       </Group>
@@ -581,6 +582,7 @@ export function MzdImport() {
             {result.lines} lines read ({result.totals_checked} report totals cross-checked) · {result.created} new · {result.already_imported} already imported
             {result.fees_filled > 0 && ` · Sentry fee ${result.dry_run ? 'to fill in' : 'filled in'} on ${result.fees_filled} existing lines`}
             {result.countries_filled > 0 && ` · country ${result.dry_run ? 'to fill in' : 'filled in'} on ${result.countries_filled} existing lines`}
+            {result.lapsed_closed > 0 && ` · ${result.lapsed_closed} lapsed licence${result.lapsed_closed === 1 ? '' : 's'} ${result.dry_run ? 'to close' : 'closed'} as renewed`}
           </Alert>
           {result.warnings.length > 0 && (
             <Alert color="orange" variant="light" title={result.reliable ? 'Notes' : 'Problems'}>
