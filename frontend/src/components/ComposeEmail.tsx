@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApiMutation } from '../hooks'
+import { ConnectMicrosoft365Alert } from './Microsoft365'
 
 interface ComposeInfo {
   enabled: boolean
@@ -13,6 +14,7 @@ interface ComposeInfo {
   to: string[]
   contact_id: number | null
   unsubscribed: boolean
+  connect_required: boolean
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -69,7 +71,7 @@ export function ComposeEmail({ opened, onClose, contactId, opportunityId }: { op
 
   const invalid = [...to, ...cc, ...bcc].filter((a) => !EMAIL.test(a))
   const size = files.reduce((n, f) => n + f.size, 0)
-  const canSend = info?.enabled && to.length > 0 && !invalid.length && subject.trim() && body.trim() && size <= 10_000_000
+  const canSend = info?.enabled && !info.connect_required && to.length > 0 && !invalid.length && subject.trim() && body.trim() && size <= 10_000_000
 
   return (
     <Modal opened={opened} onClose={onClose} title="New email" size="lg">
@@ -84,6 +86,7 @@ export function ComposeEmail({ opened, onClose, contactId, opportunityId }: { op
               An administrator needs to configure sending (CRM_MAIL_BACKEND: Microsoft 365 or SMTP).
             </Alert>
           )}
+          {info.connect_required && <ConnectMicrosoft365Alert sender={info.sender} />}
           {info.unsubscribed && (
             <Alert color="yellow" variant="light">
               This contact unsubscribed from marketing email. A personal, one-to-one message is fine; do not send promotions.

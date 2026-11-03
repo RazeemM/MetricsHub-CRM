@@ -259,6 +259,7 @@ class EmailDraft(BaseModel):
     subject: str
     body: str
     attachment: str
+    connect_required: bool = False  # graph_delegated: the user must connect Microsoft 365 before sending
 
 
 class EmailIn(BaseModel):
@@ -290,6 +291,7 @@ def email_draft(quote_id: int, db: Session = Depends(get_db), user: User = Depen
     db.commit()  # get_or_create_template may have created the brand template
     return EmailDraft(
         enabled=mail.status()["enabled"], sender=mail.sender_for(user.email),
+        connect_required=mail.status()["enabled"] and mail.needs_connection(user.id),
         to=[contact_email] if contact_email else [], cc=[],
         subject=fill(tpl.get("email_subject") or DEFAULT_EMAIL_SUBJECT, values),
         body=fill(tpl.get("email_body") or DEFAULT_EMAIL_BODY, values), attachment=_pdf_name(q))
@@ -308,7 +310,7 @@ def email_quote(quote_id: int, data: EmailIn, db: Session = Depends(get_db), use
         subject=data.subject, html=f'<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px">'
                                    f'{rich(data.body)}</div>',
         reply_to=user.email if mail.status()["fixed_sender"] else None,
-        attachments=[mail.Attachment(_pdf_name(q), render_pdf(_render(db, q)))])
+        attachments=[mail.Attachment(_pdf_name(q), render_pdf(_render(db, q)))], user_id=user.id)
     try:
         mail.send(msg)
     except mail.MailError as exc:

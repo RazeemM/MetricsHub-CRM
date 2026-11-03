@@ -331,7 +331,7 @@ border-radius:6px;text-decoration:none;font-weight:bold">Confirm my subscription
 
 def build_confirmation(form: WebForm, ct: Contact, ml: MailingList) -> mail.Message:
     s = get_settings()
-    brand = form.brand.name if form.brand else (s.mail_from_name or "us")
+    brand = form.brand.name if form.brand else (mail.sender_settings()["from_name"] or "us")
     values = {**cmp.contact_values(ct), "list_name": ml.name, "brand": brand,
               "confirm_url": confirm_url(confirm_token(form.id, ml.id, ct.id)),
               "postal_address": s.marketing_postal_address}
@@ -339,7 +339,7 @@ def build_confirmation(form: WebForm, ct: Contact, ml: MailingList) -> mail.Mess
     body = cmp.merge(form.confirm_body_html or DEFAULT_CONFIRM_HTML, values)
     if values["confirm_url"] not in body:  # a custom template without the link would be useless
         body += f'<p><a href="{values["confirm_url"]}">Confirm my subscription</a></p>'
-    return mail.Message(sender=mail.sender_for(s.mail_from, "bulk") or s.mail_from, to=[ct.email], subject=subject,
+    return mail.Message(sender=mail.sender_for(mail.mail_from(), "bulk") or mail.mail_from(), to=[ct.email], subject=subject,
                         html=body, from_name=form.brand.name if form.brand else None,
                         headers={"X-CRM-Form": form.key})
 

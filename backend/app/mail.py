@@ -10,11 +10,18 @@ Backends:
   graph     Microsoft Graph: the CRM authenticates as the Entra ID app (application permission Mail.Send) and sends
             from the signed-in user's own mailbox, so messages appear in their Outlook Sent Items. Restrict which
             mailboxes the app may send as with an Exchange Online application access policy (see README).
+  graph_delegated
+            Microsoft Graph with the delegated permission Mail.Send.Shared: each user connects their Microsoft 365
+            account once (authorization code + PKCE, offline_access); the CRM keeps the refresh token encrypted and
+            sends through /me/sendMail from the shared mailbox (the sender set in the app), which the user needs
+            Send As rights on. Automatic emails (campaigns, notices) use the connection an administrator chose.
   log       nothing leaves the server; messages are kept in memory (staging, demos, tests)
 """
 from __future__ import annotations
 
 import base64
+import datetime as dt
+import hashlib
 import html as html_lib
 import re
 import smtplib
@@ -70,6 +77,7 @@ class Message:
     from_name: str | None = None
     text: str | None = None  # plain-text part; derived from the HTML when empty
     headers: dict[str, str] = field(default_factory=dict)  # e.g. List-Unsubscribe (SMTP only)
+    user_id: int | None = None  # graph_delegated: whose Microsoft 365 sign-in sends it (None = automatic email)
 
 
 # messages "sent" with the log backend
@@ -90,6 +98,43 @@ def backend_for(purpose: str = "transactional") -> str:
     if purpose == "bulk" and s.bulk_mail_backend:
         return s.bulk_mail_backend
     return s.mail_backend
+
+
+# ---------------------------------------------------------------- sender (administrators set it in the app)
+SENDER_KEY = "mail_sender"
+_sender_cache: tuple[float, dict] | None = None
+
+
+def sender_settings() -> dict:
+    """The sender address and name saved in the app, else CRM_MAIL_FROM / CRM_MAIL_FROM_NAME, and the user whose
+    Microsoft 365 connection sends automatic emails (graph_delegated)."""
+    global _sender_cache
+    if _sender_cache and _sender_cache[0] > time.time():
+        saved = _sender_cache[1]
+    else:
+        from sqlalchemy.exc import SQLAlchemyError
+
+        from .db import SessionLocal
+        from .models import AppSetting
+        try:
+            with SessionLocal() as db:
+                row = db.get(AppSetting, SENDER_KEY)
+                saved = row.value if row and isinstance(row.value, dict) else {}
+        except SQLAlchemyError:
+            saved = {}
+        _sender_cache = (time.time() + 30, saved)
+    s = get_settings()
+    return {"from": saved.get("from") or s.mail_from, "from_name": saved.get("from_name") or s.mail_from_name,
+            "service_user_id": saved.get("service_user_id")}
+
+
+def forget_sender_settings() -> None:
+    global _sender_cache
+    _sender_cache = None
+
+
+def mail_from() -> str:
+    return sender_settings()["from"]
 
 
 def tenant_for(sender: str) -> str:
@@ -119,26 +164,36 @@ def _configured(backend: str) -> bool:
     if backend == "log":
         return True
     if backend == "smtp":
-        return bool(s.smtp_host and s.mail_from)
+        return bool(s.smtp_host and mail_from())
     if backend == "graph":
         return all(graph_credentials()) and bool(s.graph_tenant_id.strip() or tenant_for("x@x"))
+    if backend == "graph_delegated":
+        return all(graph_credentials()) and bool(mail_from()) and bool(tenant_for(mail_from()))
     return False
 
 
 def status(purpose: str = "transactional") -> dict:
-    s = get_settings()
     backend = backend_for(purpose)
-    fixed = s.mail_from if backend == "smtp" else (s.mail_from or None)
     return {"enabled": backend != "disabled" and _configured(backend), "backend": backend,
-            "fixed_sender": fixed or None}
+            "fixed_sender": mail_from() or None, "delegated": backend == "graph_delegated"}
 
 
 def sender_for(user_email: str, purpose: str = "transactional") -> str:
-    """SMTP always sends from CRM_MAIL_FROM (relays only accept verified senders); Graph sends from the user."""
-    s = get_settings()
-    if backend_for(purpose) == "smtp":
-        return s.mail_from
-    return s.mail_from or user_email
+    """The sender set in the app (or CRM_MAIL_FROM), which SMTP and graph_delegated always use; without one, Graph
+    (application permission) sends from the user's own mailbox."""
+    if backend_for(purpose) in ("smtp", "graph_delegated"):
+        return mail_from()
+    return mail_from() or user_email
+
+
+def needs_connection(user_id: int) -> bool:
+    """graph_delegated: the user has not connected Microsoft 365 yet, so cannot send."""
+    if backend_for() != "graph_delegated":
+        return False
+    from .db import SessionLocal
+    from .models import MailConnection
+    with SessionLocal() as db:
+        return db.get(MailConnection, user_id) is None
 
 
 def html_to_text(html: str) -> str:
@@ -185,7 +240,7 @@ MIME_POLICY = email_policy.SMTP.clone(max_line_length=998)
 
 def build_mime(msg: Message) -> EmailMessage:
     m = EmailMessage(policy=MIME_POLICY)
-    m["From"] = formataddr((msg.from_name or get_settings().mail_from_name or "", msg.sender))
+    m["From"] = formataddr((msg.from_name or sender_settings()["from_name"] or "", msg.sender))
     m["To"] = ", ".join(msg.to)
     if msg.cc:
         m["Cc"] = ", ".join(msg.cc)
@@ -249,7 +304,85 @@ def _recipients(addresses: list[str]) -> list[dict]:
     return [{"emailAddress": {"address": a}} for a in addresses]
 
 
-def _graph_send(msg: Message) -> None:
+# ---------------------------------------------------------------- Graph, delegated (each user signs in)
+_user_tokens: dict[int, tuple[str, float]] = {}  # user id -> (access token, expiry)
+
+
+def _fernet():
+    from cryptography.fernet import Fernet
+    key = hashlib.sha256(("mail-connection:" + get_settings().secret_key).encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def seal(token: str) -> str:
+    """Encrypt a refresh token for the database."""
+    return _fernet().encrypt(token.encode()).decode()
+
+
+def unseal(sealed: str) -> str:
+    from cryptography.fernet import InvalidToken
+    try:
+        return _fernet().decrypt(sealed.encode()).decode()
+    except InvalidToken:
+        raise MailError("The saved Microsoft 365 sign-in can no longer be read (CRM_SECRET_KEY changed): "
+                        "connect Microsoft 365 again") from None
+
+
+def token_endpoint(tenant: str) -> str:
+    return f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+
+def sending_user(msg: Message) -> int | None:
+    """Whose Microsoft 365 sign-in sends a message: the user who sends it, else (automatic email) the connection an
+    administrator chose. A user without a connection of their own never borrows another's: Exchange's Send As rights
+    decide who may send as the shared mailbox."""
+    return msg.user_id if msg.user_id is not None else sender_settings()["service_user_id"]
+
+
+def _delegated_token(user_id: int | None, tenant: str, automatic: bool) -> tuple[str, str]:
+    """An access token from the user's saved sign-in (refreshed when needed), and the account it belongs to."""
+    from .db import SessionLocal
+    from .models import MailConnection
+
+    if user_id is None:
+        raise MailError("Automatic emails have no Microsoft 365 connection: an administrator chooses one in "
+                        "System status > Email")
+    with _lock, SessionLocal() as db:
+        conn = db.get(MailConnection, user_id)
+        if not conn:
+            raise MailError("The Microsoft 365 connection for automatic emails was removed: an administrator chooses "
+                            "one in System status > Email" if automatic else
+                            "Connect your Microsoft 365 account first (Connect Microsoft 365 in the email dialog)")
+        now = dt.datetime.now(dt.UTC)
+        cached = _user_tokens.get(user_id)
+        if cached and cached[1] > time.time() + 60:
+            conn.last_used_at = now
+            db.commit()
+            return cached[0], conn.account
+        client_id, secret = graph_credentials()
+        with _client() as c:
+            r = c.post(token_endpoint(tenant), data={
+                "grant_type": "refresh_token", "client_id": client_id, "client_secret": secret,
+                "refresh_token": unseal(conn.refresh_token), "scope": get_settings().graph_delegated_scopes})
+        if r.status_code != 200:
+            conn.last_error = f"{now:%d %b %Y %H:%M} UTC: {_error(r)}"[:1000]
+            db.commit()
+            raise MailError(f"The Microsoft 365 sign-in of {conn.account} is no longer valid ({_error(r)}): "
+                            "connect Microsoft 365 again")
+        body = r.json()
+        if body.get("refresh_token"):  # Microsoft rotates refresh tokens
+            conn.refresh_token = seal(body["refresh_token"])
+        conn.last_error, conn.last_used_at = None, now
+        db.commit()
+        _user_tokens[user_id] = (body["access_token"], time.time() + int(body.get("expires_in", 3600)))
+        return body["access_token"], conn.account
+
+
+def forget_user_token(user_id: int) -> None:
+    _user_tokens.pop(user_id, None)
+
+
+def _graph_send(msg: Message, delegated: bool = False) -> None:
     if sum(len(a.content) for a in msg.attachments) > MAX_ATTACHMENTS_BYTES:
         raise MailError("Attachments are too large to send (max 3 MB)")
     payload = {
@@ -269,15 +402,30 @@ def _graph_send(msg: Message) -> None:
     tenant = tenant_for(msg.sender)
     if not tenant:
         raise MailError(f"No Microsoft 365 tenant configured for {msg.sender} (CRM_GRAPH_TENANT_ID)")
-    token = _access_token(tenant)
+    if delegated:
+        # /me/sendMail with "from": Send As on the shared mailbox is enough (/users/{mailbox} would need Full Access)
+        uid = sending_user(msg)
+        token, account = _delegated_token(uid, tenant, automatic=msg.user_id is None)
+        if msg.sender.lower() != account.lower():
+            payload["message"]["from"] = {"emailAddress": {"address": msg.sender,
+                                                           "name": msg.from_name or sender_settings()["from_name"]}}
+        url = f"{GRAPH}/me/sendMail"
+    else:
+        token = _access_token(tenant)
+        url = f"{GRAPH}/users/{msg.sender}/sendMail"
     with _client() as c:
-        r = c.post(f"{GRAPH}/users/{msg.sender}/sendMail", json=payload,
-                   headers={"Authorization": f"Bearer {token}"})
+        r = c.post(url, json=payload, headers={"Authorization": f"Bearer {token}"})
     if r.status_code == 401:
-        _tokens.pop(tenant, None)
+        if delegated:
+            forget_user_token(uid)
+        else:
+            _tokens.pop(tenant, None)
     if r.status_code != 202:
         hint = ""
-        if r.status_code in (403, 404):
+        if delegated and r.status_code in (403, 404):
+            hint = (f" Check that {account} has Send As on {msg.sender} in Exchange, and that the app has the "
+                    "delegated Mail.Send.Shared permission.")
+        elif r.status_code in (403, 404):
             hint = (f" Check that the app has the Mail.Send application permission with admin consent and may send "
                     f"as {msg.sender}.")
         raise MailError(f"Microsoft 365 refused the message: {_error(r)}.{hint}")
@@ -313,6 +461,8 @@ class MailSession:
                 _smtp_send(self.conn, msg)
             elif self.backend == "graph":
                 _graph_send(msg)
+            elif self.backend == "graph_delegated":
+                _graph_send(msg, delegated=True)
             else:
                 raise MailError("Email sending is not configured")
         except MailError as exc:

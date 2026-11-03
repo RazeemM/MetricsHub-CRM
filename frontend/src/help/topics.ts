@@ -481,10 +481,26 @@ The CRM sends two kinds of email, each through its own backend, set in the serve
 
 | Setting | For | Values |
 |---|---|---|
-| \`CRM_MAIL_BACKEND\` | quotes, emails written in the CRM, notifications | \`graph\` (Microsoft 365), \`smtp\`, \`log\`, \`disabled\` |
+| \`CRM_MAIL_BACKEND\` | quotes, emails written in the CRM, notifications | \`graph_delegated\` or \`graph\` (Microsoft 365), \`smtp\`, \`log\`, \`disabled\` |
 | \`CRM_BULK_MAIL_BACKEND\` | campaigns and newsletters | same; empty = same as above |
 
 **Recommended:** Microsoft 365 for one-to-one email (it then appears in the sender's Outlook *Sent Items*), and an email service's SMTP relay (Brevo, SendGrid…) for campaigns, to protect your Microsoft 365 domain's reputation.
+
+**Sender:** set who email is sent as (for example crm@sentrysoftware.com) under **Email** on [System status](/system). It applies to everyone, whoever sends; replies go to the user who sent the email. Empty = \`CRM_MAIL_FROM\`.
+
+## Microsoft 365, delegated (graph_delegated)
+
+Use it when the tenant should not grant the application permission Mail.Send. Each user signs in to Microsoft 365 once (with MFA) and the CRM sends with that sign-in, as the shared mailbox:
+
+1. In Entra ID, add the **delegated** Microsoft Graph permissions **Mail.Send.Shared**, **offline_access**, **openid** and **profile** to the app registration, and register \`https://<CRM address>/api/mail/microsoft/callback\` as a **Web** redirect URI.
+2. In Exchange, give **Send As** on the shared mailbox (crm@…) to the users allowed to send from the CRM. Full Access is not needed.
+3. Set \`CRM_MAIL_BACKEND=graph_delegated\`, and the sender on [System status](/system).
+4. Each user clicks **Connect Microsoft 365** in the email dialog the first time. The refresh token is kept encrypted, so the CRM sends without a new sign-in until Microsoft expires it; the dialog then asks to connect again.
+5. On System status, an administrator ticks **Send automatic emails with my sign-in**: campaigns, renewal notices and form confirmations have no user behind them and use that connection. A user who has not connected never sends with someone else's sign-in.
+
+A copy of each email is saved in the sender's *Sent Items*. To keep one in the shared mailbox too: \`Set-Mailbox -Identity crm@… -MessageCopyForSentAsEnabled $true\`.
+
+> \`ErrorSendAsDenied\` means the signed-in user has no Send As right on the shared mailbox.
 
 ## Microsoft 365 (graph)
 

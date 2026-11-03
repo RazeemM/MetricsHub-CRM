@@ -49,14 +49,18 @@ class Settings(BaseSettings):
     def sso_enabled(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id)
 
-    # Outgoing email (quotes): "disabled", "graph" (Microsoft 365) or "log" (kept in memory, nothing sent)
+    # Outgoing email (quotes): "disabled", "graph" (Microsoft 365, application permission), "graph_delegated"
+    # (Microsoft 365, each user signs in: delegated Mail.Send.Shared), "smtp" or "log" (kept in memory, nothing sent)
     mail_backend: str = "disabled"
     # Microsoft Graph app registration; empty = reuse the SSO app (tenant taken from oidc_issuer)
     graph_tenant_id: str = ""
     graph_client_id: str = ""
     graph_client_secret: str = ""
+    # graph_delegated: delegated permissions requested when a user connects Microsoft 365 for sending
+    graph_delegated_scopes: str = "openid profile offline_access https://graph.microsoft.com/Mail.Send.Shared"
     # Send every email from this mailbox (e.g. sales@metricshub.com) instead of the signed-in user's own.
-    # Required for SMTP, which always sends from it (replies still go to the user who sent a quote).
+    # Required for SMTP and graph_delegated (replies still go to the user who sent a quote). Administrators can
+    # change it in the app (System status > Email), which takes precedence over this default.
     mail_from: str = ""
     mail_from_name: str = ""
     # Campaigns and newsletters: "" = same backend as above, or smtp / graph / log / disabled

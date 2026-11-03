@@ -116,8 +116,8 @@ def build_message(c: Campaign, email: str, values: dict, token: str, track: bool
     s = get_settings()
     unsub = unsubscribe_url(token)
     return mail.Message(
-        sender=mail.sender_for(s.mail_from, "bulk") or s.mail_from, to=[email], subject=subject, html=body,
-        from_name=c.from_name or s.mail_from_name or None, reply_to=c.reply_to or None,
+        sender=mail.sender_for(mail.mail_from(), "bulk") or mail.mail_from(), to=[email], subject=subject, html=body,
+        from_name=c.from_name or mail.sender_settings()["from_name"] or None, reply_to=c.reply_to or None,
         headers={"List-Unsubscribe": f"<{unsub}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
                  "X-CRM-Campaign": str(c.id)})
 

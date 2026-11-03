@@ -41,6 +41,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useMicrosoft365Return } from './Microsoft365'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { fmtDate } from '../labels'
@@ -127,6 +128,7 @@ export default function Layout() {
   const { user, logout, isAdmin } = useAuth()
   const loc = useLocation()
   const nav = useNavigate()
+  useMicrosoft365Return()
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
   const marketing = isAdmin
     ? [...MARKETING, { to: '/web-forms', label: 'Website forms', icon: IconWorldWww }, { to: '/tracking', label: 'Website tracking', icon: IconCode }]

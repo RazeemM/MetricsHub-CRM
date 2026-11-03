@@ -638,5 +638,30 @@ class SavedView(TimestampMixin, Base):
     owner: Mapped[User] = relationship()
 
 
+class AppSetting(Base):
+    """A setting administrators change in the app (e.g. the email sender), overriding its CRM_* default."""
+
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[dict | list | str | int | None] = mapped_column(JSONB)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                                    onupdate=func.now())
+
+
+class MailConnection(Base):
+    """A user's Microsoft 365 sign-in for sending email (Graph delegated permission Mail.Send.Shared)."""
+
+    __tablename__ = "mail_connections"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    account: Mapped[str] = mapped_column(String(255))  # the Microsoft 365 account that signed in
+    refresh_token: Mapped[str] = mapped_column(Text)  # encrypted with a key derived from CRM_SECRET_KEY
+    scopes: Mapped[str | None] = mapped_column(String(500))
+    connected_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(1000))
+    user: Mapped[User] = relationship()
+
+
 Index("uq_accounts_external", Account.external_source, Account.external_id, unique=True)
 Index("uq_opportunities_external", Opportunity.external_source, Opportunity.external_id, unique=True)

@@ -39,7 +39,7 @@ def mail_settings(_: User = Depends(get_current_user)):
         "transactional": mail.status("transactional"), "bulk": mail.status("bulk"),
         "smtp": {"host": s.smtp_host or None, "port": s.smtp_port, "security": s.smtp_security,
                  "username": s.smtp_username or None},
-        "from": s.mail_from or None, "from_name": s.mail_from_name or None,
+        "from": mail.mail_from() or None, "from_name": mail.sender_settings()["from_name"] or None,
         "rate_per_minute": s.bulk_rate_per_minute, "postal_address": s.marketing_postal_address or None,
         "merge_fields": cmp.MERGE_FIELDS,
     }
@@ -55,7 +55,8 @@ def mail_test(data: TestMailIn, user: User = Depends(require_admin)):
     """Send a test message through the configured server, to check the settings."""
     try:
         mail.send(mail.Message(sender=mail.sender_for(user.email, data.purpose), to=[data.to],
-                               subject="CRM test email", html="<p>The CRM can send email through this server.</p>"),
+                               subject="CRM test email", html="<p>The CRM can send email through this server.</p>",
+                               user_id=user.id if data.purpose == "transactional" else None),
                   data.purpose)
     except mail.MailError as exc:
         raise mail.http_error(exc) from None

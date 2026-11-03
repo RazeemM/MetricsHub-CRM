@@ -47,6 +47,7 @@ def compose_info(contact_id: int | None = None, opportunity_id: int | None = Non
         "to": [contact.email] if contact and contact.email else [],
         "contact_id": contact.id if contact else None,
         "unsubscribed": bool(contact and contact.unsubscribed),
+        "connect_required": st["enabled"] and mail.needs_connection(user.id),
     }
 
 
@@ -80,7 +81,7 @@ async def send_email(
         sender=sender, to=to_l, cc=cc_l, bcc=bcc_l, subject=subject, text=body,
         html=f'<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px">{rich(body)}</div>',
         reply_to=user.email if sender != user.email else None, from_name=user.full_name,
-        attachments=attachments)
+        attachments=attachments, user_id=user.id)
     try:
         mail.send(msg)
     except mail.MailError as exc:

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useApiMutation } from '../hooks'
+import { ConnectMicrosoft365Alert } from './Microsoft365'
 
 interface EmailDraft {
   enabled: boolean
@@ -13,6 +14,7 @@ interface EmailDraft {
   subject: string
   body: string
   attachment: string
+  connect_required?: boolean
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -46,7 +48,7 @@ export function EmailQuote({ quoteId, opportunityId, onClose }: { quoteId: numbe
   })
 
   const invalid = [...to, ...cc, ...bcc].filter((a) => !EMAIL.test(a))
-  const canSend = draft?.enabled && to.length > 0 && invalid.length === 0 && subject.trim() && body.trim()
+  const canSend = draft?.enabled && !draft.connect_required && to.length > 0 && invalid.length === 0 && subject.trim() && body.trim()
 
   return (
     <Modal opened={quoteId !== null} onClose={onClose} title="Email quote" size="lg">
@@ -58,10 +60,11 @@ export function EmailQuote({ quoteId, opportunityId, onClose }: { quoteId: numbe
         <Stack gap="sm">
           {!draft.enabled && (
             <Alert color="orange" variant="light" title="Email is not set up">
-              An administrator needs to connect the CRM to Microsoft 365 (CRM_MAIL_BACKEND=graph). You can still download the PDF and attach it yourself.
+              An administrator needs to connect the CRM to Microsoft 365 (CRM_MAIL_BACKEND=graph or graph_delegated). You can still download the PDF and attach it yourself.
             </Alert>
           )}
-          <TextInput label="From" value={draft.sender} readOnly variant="filled" description="Sent through Microsoft 365; a copy is kept in Sent Items" />
+          {draft.connect_required && <ConnectMicrosoft365Alert sender={draft.sender} />}
+          <TextInput label="From" value={draft.sender} readOnly variant="filled" description="Sent through Microsoft 365; replies come back to you when it is a shared mailbox" />
           <TagsInput label="To" value={to} onChange={setTo} placeholder="Type an address and press Enter" splitChars={[',', ';', ' ']} clearable />
           <Group grow align="flex-start">
             <TagsInput label="Cc" value={cc} onChange={setCc} splitChars={[',', ';', ' ']} />

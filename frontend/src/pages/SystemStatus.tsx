@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
+import { SenderSettingsCard } from '../components/Microsoft365'
 import { PageHeader } from '../components/common'
 import { InfoTip, Stat } from '../components/ui'
 import { useApiMutation } from '../hooks'
@@ -205,6 +206,7 @@ export default function SystemStatus() {
                 <Stat label="Campaign queue" value={n(Number(e.recipients_queued))} hint={`${n(Number(e.campaigns_sending))} sending · ${n(Number(e.campaigns_paused))} paused`} info="Campaign recipients waiting to be sent. A campaign pauses when the mail server refuses it, and the reason shows below." />
                 <Stat label="Campaign recipients" value={n(Number(e.recipients_sent))} hint={`${n(Number(e.recipients_failed))} failed · ${n(Number(e.recipients_skipped))} skipped`} info="All campaign emails ever sent, with those refused and those skipped (no address, unsubscribed, no consent)." />
               </SimpleGrid>
+              <SenderSettingsCard />
               <Text size="sm" c="dimmed" mb="xs">
                 Backend: {String(e.backend)}
                 {e.bulk_backend !== e.backend ? ` · campaigns: ${String(e.bulk_backend)}` : ''}
