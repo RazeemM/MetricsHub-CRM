@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import math
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -30,6 +31,8 @@ DEC_OK = re.compile(r"^\(?-?\d{1,3}(?:,\d{3})*\.\d{2}\)?$|^\(?-?\d+\.\d{2}\)?$")
 CHARGE_PREFIX = re.compile(r"^([A-Z]{4,}(?:\s*Rev\b)?)\s*(.*)$")
 DOC_TYPES = ("credit memo", "credit", "invoice", "debit memo")
 GLUED = re.compile(r"^(?:(?:Invoice|Credit Memo|Debit Memo)\s|(?:ADD|REN|RENEWAL|INITIAL|PERP|UPGRADE)\s|(?:SUPPORT|RENEWAL SUPPORT|INITIAL SUPPORT)[A-Z])")
+SECTION_LABEL = re.compile(r"\b(?:Total|Term|License|Maintenance|SaaS|Support)\s*:")
+MAX_COUNTRY = 40  # no country name is longer: a long one holds a company name that ran into the column
 MAX_TEXT = {"customer": 255, "billing": 255, "product": 255, "country": 80, "doc": 80}
 
 # formatted fields can be split out of merged cells by their shape
@@ -194,6 +197,11 @@ def make_line(f: dict, page: int) -> ReportLine:
     for value in (line.customer, line.billing_company):
         if GLUED.match(value):
             raise ReportError(f"company name '{value[:40]}' starts with text from another column")
+    if len(line.country) > MAX_COUNTRY or line.country[:1].islower():
+        raise ReportError(f"country '{line.country[:40]}' holds text from another column")
+    for value in (line.customer, line.billing_company, line.product):
+        if SECTION_LABEL.search(value):
+            raise ReportError(f"'{value[:60]}' holds a section label from another row")
     if line.end is None and line.license_type != "perpetual":
         raise ReportError("no service end date")
     for name, limit in MAX_TEXT.items():
@@ -204,8 +212,8 @@ def make_line(f: dict, page: int) -> ReportLine:
     return line
 
 
-def total_numbers(text: str) -> tuple[Decimal, Decimal] | None:
-    """Quantity and net amount of a '... Total: qty net fee' row. Some PDFs space digits apart ('1 52,568.79'):
+def total_numbers(text: str) -> tuple[Decimal, Decimal, Decimal] | None:
+    """Quantity, net amount and fee of a '... Total: qty net fee' row. Some PDFs space digits apart ('1 52,568.79'):
     the one way of joining the fragments into an integer and two amounts is used."""
     m = TOTAL.search(text)
     if not m:
@@ -219,7 +227,7 @@ def total_numbers(text: str) -> tuple[Decimal, Decimal] | None:
         a, b = cuts
         q, net, fee = "".join(parts[:a]), "".join(parts[a:b]), "".join(parts[b:])
         if INT_OK.match(q) and DEC_OK.match(net) and DEC_OK.match(fee):
-            return _num(q), _num(net)
+            return _num(q), _num(net), _num(fee)
     return None
 
 
@@ -229,24 +237,29 @@ class _Totals:
     def __init__(self, warnings: list[str]):
         self.warnings, self.start, self.checked = warnings, 0, 0
 
-    def check(self, lines: list[ReportLine], qty: Decimal, net: Decimal, where: str, label: str):
+    def check(self, lines: list[ReportLine], qty: Decimal, net: Decimal, where: str, label: str,
+              fee: Decimal | None = None):
         section = lines[self.start:]
         self.start = len(lines)
         if not section:
             return
         got_q, got_n = sum(x.quantity for x in section), sum(x.net for x in section)
-        # some sections have no total row of their own: then the total covers only the last lines
-        q, n, ok = Decimal(0), Decimal(0), False
+        # some sections have no total row of their own: then the total covers only the last lines.
+        # BMC rounds each line's fee before adding them up: a cent per line is allowed
+        q, n, f, ok = Decimal(0), Decimal(0), Decimal(0), False
         for k, x in enumerate(reversed(section), 1):
-            q, n = q + x.quantity, n + x.net
-            if q == qty and abs(n - net) <= Decimal("0.01") * k + Decimal("0.02"):
+            q, n, f = q + x.quantity, n + x.net, f + x.fee
+            cents = Decimal("0.01") * k + Decimal("0.02")
+            if q == qty and abs(n - net) <= cents and (fee is None or abs(f - fee) <= cents):
                 ok = True
                 break
         if ok:
             self.checked += 1
         else:
-            self.warnings.append(f"{where}: '{label}' is {qty} / {net:,.2f} but the lines read add up to "
-                                 f"{got_q} / {got_n:,.2f}")
+            got_f = sum(x.fee for x in section)
+            fees = f" / fee {fee:,.2f}" if fee is not None else ""
+            self.warnings.append(f"{where}: '{label}' is {qty} / {net:,.2f}{fees} but the lines read add up to "
+                                 f"{got_q} / {got_n:,.2f}" + (f" / fee {got_f:,.2f}" if fees else ""))
 
 
 # ---------------------------------------------------------------- xlsx
@@ -282,7 +295,8 @@ def parse_xlsx(data: bytes) -> Report:
             if label:
                 nums = [_num(c) for c in row[row.index(label) + 1:] if c not in (None, "")]
                 if len(nums) >= 2 and None not in nums[:2]:
-                    totals.check(lines, nums[0], nums[1], f"Row {rno}", label.strip())
+                    totals.check(lines, nums[0], nums[1], f"Row {rno}", label.strip(),
+                                 nums[2] if len(nums) >= 3 else None)
                 continue
             try:
                 lines.append(make_line(f, rno))
@@ -314,12 +328,16 @@ def _is_data(text: str) -> bool:
     return bool(DATE.search(text) and MONEY.search(text)) and total_numbers(text) is None
 
 
-def _columns(data: list[list[dict]], width: float, tol: int, gap: float) -> list[tuple[float, float]]:
+def _columns(data: list[list[dict]], width: float, tol: int, gap: float,
+             exact: bool = False) -> list[tuple[float, float]]:
+    """Columns from the x ranges the data rows cover. exact: a word covers only the whole points inside it, so a
+    gap under 2 points between two cells still shows."""
     cov = [0] * (int(width) + 2)
     for line in data:
         seen = set()
         for w in line:
-            seen.update(range(int(w["x0"]), min(int(w["x1"]) + 1, len(cov))))
+            a, b = (math.ceil(w["x0"]), math.floor(w["x1"])) if exact else (int(w["x0"]), int(w["x1"]))
+            seen.update(range(a, min(b + 1, len(cov))))
         for x in seen:
             cov[x] += 1
     cols, start, run, last = [], None, 0, 0
@@ -487,7 +505,65 @@ def _split_cell(words: list[dict], fields: list[str]) -> dict:
     return out
 
 
+# How a page is cut into words and columns. "normal" suits most reports. In older layouts some cells are drawn
+# 1-2 points from the next one ("RENEWAL SUPPORT" + "Acantho S.p.A." read as "SUPPORTAcantho"): "fine" splits words
+# at smaller gaps between characters and accepts one-pixel gaps between columns. It is used only for a report
+# "normal" cannot read without problems, and only when it reads that report with none: on other layouts it loses the
+# second line of wrapped company names.
+READINGS = {
+    "normal": {"x_tolerance": 3, "min_gap": 1.5, "gaps": (0.45, 0.8, 1.2)},
+    "fine": {"x_tolerance": 1.5, "min_gap": 1, "gaps": (0.1, 0.25, 0.45, 0.8, 1.2), "cut_at_edges": True,
+             "exact": True, "max_tol": 0},  # every column, even one only a few long names reach
+}
+
+
+def _cut_at_column_edges(words: list[dict], width: float) -> tuple[list[dict], set[float]]:
+    """Fine reading: a clipped cell can touch the next one ("United Arab Em" + "MAGNOOS..." -> "EmMAGNOOS"). Cut a
+    word where a capital letter after a lower-case one starts exactly on a left column edge that at least 3 words of
+    the page start on. Only right of the product names (left part of the page), which must never change.
+    Returns the words and the edges cut at."""
+    starts: dict[float, int] = {}
+    for w in words:
+        k = round(w["x0"] * 2) / 2
+        starts[k] = starts.get(k, 0) + 1
+    edges = [x for x, n in starts.items() if n >= 3 and x > 0.35 * width]
+    out, used = [], set()
+    for w in words:
+        cs = w.get("chars") or []
+        cut = next((i for i in range(1, len(cs)) if cs[i]["text"].isupper() and cs[i - 1]["text"].islower()
+                    and any(abs(cs[i]["x0"] - e) <= 0.3 for e in edges)), None)
+        if cut is None:
+            out.append(w)
+            continue
+        used.add(round(cs[cut]["x0"] * 2) / 2)
+        for part in (cs[:cut], cs[cut:]):
+            out.append({**w, "text": "".join(c["text"] for c in part), "x0": part[0]["x0"], "x1": part[-1]["x1"],
+                        "chars": part})
+    return out, used
+
+
+def _split_at_edges(cols: list[tuple[float, float]], edges: set[float]) -> list[tuple[float, float]]:
+    """Fine reading: split a column at the edges words were cut at: touching cells leave no gap between columns."""
+    out = []
+    for a, b in cols:
+        inner = sorted(e for e in edges if a + 1 < e < b - 1)
+        bounds = [a, *inner, b]
+        out.extend((x, y) for x, y in zip(bounds, bounds[1:]))
+    return out
+
+
 def parse_pdf(data: bytes) -> Report:
+    report = _parse_pdf(data, READINGS["normal"])
+    if report.reliable:
+        return report
+    try:
+        fine = _parse_pdf(data, READINGS["fine"])
+    except ReportError:
+        return report
+    return fine if fine.reliable else report
+
+
+def _parse_pdf(data: bytes, reading: dict) -> Report:
     import pdfplumber  # imported lazily: only needed for report imports
 
     try:
@@ -506,7 +582,11 @@ def parse_pdf(data: bytes) -> Report:
             raise ReportError("This is not a MarketZone report (OEM reports are not supported)")
         title = first_text.splitlines()[0].strip()
         for pno, page in enumerate(pdf.pages, 1):
-            plines = _lines(page.extract_words(return_chars=True))
+            words = page.extract_words(return_chars=True, x_tolerance=reading["x_tolerance"])
+            cut_edges: set[float] = set()
+            if reading.get("cut_at_edges"):
+                words, cut_edges = _cut_at_column_edges(words, page.width)
+            plines = _lines(words)
             anchor = next((i for i, ln in enumerate(plines) if "Product" in _text(ln) and "Name" in _text(ln)), None)
             if anchor is None:
                 continue
@@ -518,8 +598,10 @@ def parse_pdf(data: bytes) -> Report:
             data = [plines[i] for i in data_idx]
             heights = sorted(w["bottom"] - w["top"] for ln in data for w in ln)
             h = heights[len(heights) // 2]
-            candidates = [_columns(data, page.width, tol, max(1.5, g * h))
-                          for tol in range(0, 1 + len(data) // 15) for g in (0.45, 0.8, 1.2)]
+            candidates = [_columns(data, page.width, tol, max(reading["min_gap"], g * h), reading.get("exact", False))
+                          for tol in range(0, 1 + reading.get("max_tol", len(data) // 15)) for g in reading["gaps"]]
+            if reading.get("cut_at_edges"):
+                candidates = [_split_at_edges(c, cut_edges) for c in candidates]
             phrases = _phrases(header_words)
             cols = max(candidates, key=lambda c: _score(c, phrases))
             fields = _column_fields(cols, phrases)
@@ -542,7 +624,7 @@ def parse_pdf(data: bytes) -> Report:
                 ln = plines[i]
                 text = _text(ln)
                 if (tn := total_numbers(text)) is not None:
-                    totals.check(lines, tn[0], tn[1], f"Page {pno}", text[:60])
+                    totals.check(lines, tn[0], tn[1], f"Page {pno}", text[:60], tn[2])
                     prev_line = None
                     continue
                 if i not in data_set:
@@ -567,8 +649,9 @@ def parse_pdf(data: bytes) -> Report:
                 f: dict = {}
                 last_text, last_x1 = None, None
                 for fs, ws in zip(fields, _cell_words(ln, cols)):
-                    if fs == ["overflow"]:
-                        # usually empty: a long company name that runs on into it belongs to the column on its left
+                    if fs == ["overflow"] or not fs:
+                        # usually empty: a long company or product name that runs on into it (or into a column
+                        # without a header) belongs to the column on its left
                         extra = " ".join(w["text"] for w in ws)
                         if extra and last_text in f and not re.fullmatch(r"[A-Z]*\d{5,}", extra):
                             glued = last_x1 is not None and ws[0]["x0"] - last_x1 < 0.5

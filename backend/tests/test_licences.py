@@ -4,6 +4,8 @@ Uses invented customers only: real reports are confidential and must not be comm
 import datetime as dt
 from decimal import Decimal
 
+import pytest
+
 from app import entitlements as ent
 from app import mzd_report
 from app.db import SessionLocal
@@ -74,10 +76,12 @@ def test_old_layout_headers_are_recognised():
 
 
 def test_pdf_totals_with_spaced_digits():
-    assert mzd_report.total_numbers("Term Total: 5,483 1 52,568.79 8 3,912.83") == (Decimal(5483), Decimal("152568.79"))
-    assert mzd_report.total_numbers("Converged Term total: 6 691.46 152.12") == (Decimal(6), Decimal("691.46"))
+    assert mzd_report.total_numbers("Term Total: 5,483 1 52,568.79 8 3,912.83") == (
+        Decimal(5483), Decimal("152568.79"), Decimal("83912.83"))
+    assert mzd_report.total_numbers("Converged Term total: 6 691.46 152.12") == (
+        Decimal(6), Decimal("691.46"), Decimal("152.12"))
     assert mzd_report.total_numbers("Bundle prior to April 2026Total: (2,770) (2,661.25) (1,304.01)") == (
-        Decimal(-2770), Decimal("-2661.25"))
+        Decimal(-2770), Decimal("-2661.25"), Decimal("-1304.01"))
     assert mzd_report.total_numbers("Total Payment Due $ 364,025.79") is None
 
 
@@ -551,3 +555,43 @@ def test_lapse_closes_when_its_renewal_was_imported_under_the_other_company_name
     closed = next(h for h in client.get("/api/licences/lapsed", params={"include_resolved": True}).json()
                   if h["account_name"] == "SPLITCO Seguridad, S.A.")
     assert closed["resolved"] and "under Splitco Gestion SLU" in closed["resolution"]
+
+
+def _word(text, x0, top=100.0, gap=0.0):
+    """A pdfplumber-like word with evenly spaced characters (2 points each, then `gap`)."""
+    chars, x = [], x0
+    for ch in text:
+        chars.append({"text": ch, "x0": x, "x1": x + 2, "top": top, "bottom": top + 7})
+        x += 2 + gap
+    return {"text": text, "x0": x0, "x1": chars[-1]["x1"], "top": top, "bottom": top + 7, "chars": chars}
+
+
+def test_fine_reading_cuts_touching_cells_at_a_column_edge():
+    # three rows have a billing company starting at x=467; on one, a clipped country touches it ("EmMAGNOOS")
+    words = [_word("Italy", 438, top=t) for t in (100, 110, 120)] + \
+            [_word("Acantho", 467, top=t) for t in (100, 110, 120)] + [_word("EmMAGNOOS", 463, top=130)]
+    cut, edges = mzd_report._cut_at_column_edges(words, 792)
+    assert [w["text"] for w in cut[-2:]] == ["Em", "MAGNOOS"] and edges == {467.0}
+    assert mzd_report._split_at_edges([(438, 520)], edges) == [(438, 467.0), (467.0, 520)]
+    # left of the page (product names) nothing is ever cut
+    left = [_word("Operations", 60, top=t) for t in (100, 110, 120)] + [_word("TrueSight", 42, top=130)]
+    assert len(mzd_report._cut_at_column_edges(left, 792)[0]) == len(left)
+
+
+def test_columns_text_from_another_column_and_fee_totals_make_a_report_unreliable():
+    base = {"doc": "INV1", "product": "Sentry Storage Monitor", "charge": "Term", "qty": 5, "net": 100, "fee": 50,
+            "start": "1/1/2024", "end": "12/31/2024", "customer": "Acme Bank", "billing": "Acme Bank",
+            "country": "Italy"}
+    assert mzd_report.make_line(base, 1).country == "Italy"
+    for bad in ({"country": "ndia"}, {"country": "Oil Company Limited (ENOC) LLCUnited Arab Emirates"},
+                {"billing": "RAH Infotech Pvt Ltd Resource Bundle Term:"}):
+        with pytest.raises(mzd_report.ReportError):
+            mzd_report.make_line({**base, **bad}, 1)
+    # a section total also checks the fees, allowing BMC's rounding of a cent per line
+    lines = [mzd_report.make_line({**base, "fee": f}, 1) for f in ("10.01", "10.01", "10.01")]
+    warnings: list[str] = []
+    t = mzd_report._Totals(warnings)
+    t.check(lines, Decimal(15), Decimal(300), "p1", "Term Total:", Decimal("30.00"))
+    assert not warnings and t.checked == 1
+    t.check(lines + lines[:1], Decimal(5), Decimal(100), "p2", "Term Total:", Decimal("25.00"))
+    assert warnings and "fee 25.00" in warnings[0]
