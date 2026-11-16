@@ -398,6 +398,8 @@ class Entitlement(TimestampMixin, Base):
     report_name: Mapped[str | None] = mapped_column(String(255))
     line_key: Mapped[str | None] = mapped_column(String(400), unique=True)  # makes report imports idempotent
     renewal_notified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    # the renewal opportunity opened for this licence's renewal (set on the holding's latest line)
+    renewal_opportunity_id: Mapped[int | None] = mapped_column(ForeignKey("opportunities.id", ondelete="SET NULL"))
     lapse_resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     lapse_resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     lapse_resolution: Mapped[str | None] = mapped_column(Text)

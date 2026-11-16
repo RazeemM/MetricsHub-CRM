@@ -56,6 +56,7 @@ export interface Holding {
   resolved_by: string | null
   resolved_at: string | null
   later_purchase?: { product: string; start: string | null; end: string | null; products: number } | null
+  renewal_opportunity_id?: number | null
 }
 
 interface Line {
@@ -155,6 +156,11 @@ export function AccountLicences({ accountId }: { accountId: number }) {
                   <Table.Td>{TYPES[h.license_type] ?? h.license_type}</Table.Td>
                   <Table.Td c={h.status === 'lapsed' ? 'red' : undefined} style={{ whiteSpace: 'nowrap' }}>
                     {fmtDate(h.renewal_date)}
+                    {h.renewal_opportunity_id && (
+                      <Anchor component={Link} to={`/opportunities/${h.renewal_opportunity_id}`} size="xs" display="block">
+                        Renewal opportunity
+                      </Anchor>
+                    )}
                     {h.installments && (
                       <Text size="xs" c="dimmed">
                         billed in instalments
@@ -517,12 +523,107 @@ interface ImportResult {
   fees_filled: number
   countries_filled: number
   lapsed_closed: number
+  renewal_opportunities?: number
   accounts_matched: Record<string, string>
   accounts_created: string[]
   resellers: Record<string, string>
   totals_checked: number
   warnings: string[]
   preview: { customer: string; account: string; product: string; type: string; quantity: string; start: string; end: string; reseller: string | null; document: string }[]
+}
+
+interface RenewalPlan {
+  account_id: number
+  account: string
+  action: 'create' | 'add' | 'note'
+  opportunity_id: number | null
+  opportunity: string | null
+  renewal_date: string
+  value: string
+  licences: { product: string; quantity: string; license_type: string; period_end: string; net: string | null; reseller: string | null }[]
+}
+
+const PLAN_ACTIONS = { create: 'New opportunity', add: 'Added to its open opportunity', note: 'Note on its own renewal deal' }
+
+/** Admin card on Import / export: renewal opportunities opened from licences before they renew. */
+export function RenewalOpportunities() {
+  const [result, setResult] = useState<{ dry_run: boolean; days: number; created: number; added: number; noted: number; planned: RenewalPlan[] } | null>(null)
+  const run = useApiMutation((dryRun: boolean) => api<NonNullable<typeof result>>('/licences/renewal-opportunities', { method: 'POST', body: { dry_run: dryRun } }), {
+    invalidate: [['opportunities'], ['board'], ['licences']],
+    onSuccess: setResult,
+  })
+  const plans = result?.planned ?? []
+  return (
+    <Card withBorder mb="md">
+      <Title order={5}>Renewal opportunities from licences</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        {result?.days ?? 60} days before a licence renews, the customer gets an opportunity in the Renewals pipeline with one line per licence renewing (product, quantity, current period, what was invoiced). This runs every day on its own and after each MarketZone import; licences billed in quarterly instalments are left out.
+      </Text>
+      <Group>
+        <Button variant="default" loading={run.isPending && run.variables} onClick={() => run.mutate(true)}>
+          Preview
+        </Button>
+        <Button disabled={!result?.dry_run || !plans.length} loading={run.isPending && !run.variables} onClick={() => run.mutate(false)}>
+          Open them now
+        </Button>
+      </Group>
+      {result && (
+        <Stack gap="xs" mt="md">
+          <Alert color={result.dry_run ? 'blue' : 'green'} variant="light">
+            {result.dry_run
+              ? plans.length
+                ? `${plans.length} customer${plans.length === 1 ? '' : 's'} with licences renewing in the next ${result.days} days and no renewal opportunity yet.`
+                : `Every licence renewing in the next ${result.days} days already has its renewal opportunity.`
+              : `${result.created} opened · ${result.added} added to · ${result.noted} noted on an existing renewal deal.`}
+          </Alert>
+          {plans.length > 0 && (
+            <Table.ScrollContainer minWidth={640}>
+              <Table fz="xs" verticalSpacing={4}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Customer</Table.Th>
+                    <Table.Th>Renews</Table.Th>
+                    <Table.Th>Licences</Table.Th>
+                    <Table.Th ta="right">Invoiced last period</Table.Th>
+                    <Table.Th>Opportunity</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {plans.map((p) => (
+                    <Table.Tr key={`${p.account_id}-${p.renewal_date}`}>
+                      <Table.Td>
+                        <Anchor component={Link} to={`/accounts/${p.account_id}`} size="xs">
+                          {p.account}
+                        </Anchor>
+                      </Table.Td>
+                      <Table.Td style={{ whiteSpace: 'nowrap' }}>{fmtDate(p.renewal_date)}</Table.Td>
+                      <Table.Td>
+                        {p.licences.map((l) => (
+                          <div key={l.product}>
+                            {qty(l.quantity)} × {l.product}
+                          </div>
+                        ))}
+                      </Table.Td>
+                      <Table.Td ta="right">${Number(p.value).toLocaleString('en-US', { maximumFractionDigits: 0 })}</Table.Td>
+                      <Table.Td>
+                        {p.opportunity_id ? (
+                          <Anchor component={Link} to={`/opportunities/${p.opportunity_id}`} size="xs">
+                            {p.opportunity}
+                          </Anchor>
+                        ) : (
+                          PLAN_ACTIONS[p.action]
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+        </Stack>
+      )}
+    </Card>
+  )
 }
 
 /** Admin card on Import / export: load a quarterly BMC MarketZone report. */
@@ -583,6 +684,7 @@ export function MzdImport() {
             {result.fees_filled > 0 && ` · Sentry fee ${result.dry_run ? 'to fill in' : 'filled in'} on ${result.fees_filled} existing lines`}
             {result.countries_filled > 0 && ` · country ${result.dry_run ? 'to fill in' : 'filled in'} on ${result.countries_filled} existing lines`}
             {result.lapsed_closed > 0 && ` · ${result.lapsed_closed} lapsed licence${result.lapsed_closed === 1 ? '' : 's'} ${result.dry_run ? 'to close' : 'closed'} as renewed`}
+            {!!result.renewal_opportunities && ` · ${result.renewal_opportunities} renewal opportunit${result.renewal_opportunities === 1 ? 'y' : 'ies'} opened`}
           </Alert>
           {result.warnings.length > 0 && (
             <Alert color="orange" variant="light" title={result.reliable ? 'Notes' : 'Problems'}>

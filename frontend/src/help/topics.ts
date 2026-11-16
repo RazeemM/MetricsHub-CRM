@@ -239,6 +239,17 @@ Licences come from the quarterly **BMC MarketZone reports** (loaded by an admini
 - **Perpetual licences** never renew; their maintenance appears as a separate *Support* licence, which does.
 - **Lapsed** means a later report covered the end date and had no renewal line. Until that report arrives, the licence shows *ended · awaiting next report*.
 
+## Renewal opportunities
+
+60 days before a licence renews, the customer gets an opportunity in the **Renewals** pipeline, at the *Upcoming renewal* stage. It has one line per licence renewing in that window: product, quantity, the current period and what was invoiced for it (the line is worth that amount; the Sentry fee is in its description). One opportunity per customer and brand, closing on the first renewal date; licences that come into the window later are added to it while it is open.
+
+- Sold through BMC MarketZone, it is marked as such, with the reseller from the report.
+- A customer that already has an open renewal deal of its own keeps it: the licences are listed in a note on that deal instead.
+- Licences billed in quarterly instalments, and perpetual licences, never get one.
+- Each renewal is handled once. The licence's row on the account links to its renewal opportunity.
+
+It runs every day and after each MarketZone import. Administrators can preview and run it on [Import / export](/import). \`CRM_RENEWAL_OPPORTUNITY_DAYS\` changes the 60 days (0 turns it off).
+
 ## Renewal notices
 
 About 60 days before a renewal date, the CRM notifies the owner of the account's open renewal opportunity (else the account owner, else the administrators), in the bell and by email. Each renewal is notified once.

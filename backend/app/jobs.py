@@ -1,6 +1,6 @@
 """Scheduled jobs. Run inside the API process (CRM_RUN_SCHEDULER=true) or from cron:
 
-  python -m app.jobs renewals      licence renewal notices
+  python -m app.jobs renewals      licence renewal opportunities and notices
   python -m app.jobs campaigns     send the next batch of queued campaign email (cron: every minute)
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import sys
 
 from sqlalchemy import text
 
-from . import campaigns, monitoring, tracking
+from . import campaigns, monitoring, renewal_deals, tracking
 from .config import get_settings
 from .db import SessionLocal, engine
 from .entitlements import auto_close_lapsed, send_renewal_notices
@@ -33,6 +33,12 @@ def run_renewals() -> int:
         closed = auto_close_lapsed(db)
         if closed:
             log.info("Closed %s lapsed licence(s) renewed later", closed)
+        opened = renewal_deals.open_renewal_opportunities(db)  # commits
+        if opened.created or opened.added or opened.noted:
+            log.info("Renewal opportunities: %s opened, %s added to, %s noted", opened.created, opened.added,
+                     opened.noted)
+        if not db.scalar(text("SELECT pg_try_advisory_xact_lock(:id)"), {"id": LOCK_ID}):
+            return 0  # the commit released the lock and another worker took it
         n = send_renewal_notices(db)  # commits, which also releases the lock
         if n:
             log.info("Renewal notices sent for %s account(s)", n)

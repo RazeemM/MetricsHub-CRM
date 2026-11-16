@@ -40,6 +40,7 @@ class HoldingOut(BaseModel):
     resolved_by: str | None
     resolved_at: dt.datetime | None
     later_purchase: dict | None = None
+    renewal_opportunity_id: int | None = None
 
 
 class LineOut(BaseModel):
@@ -196,6 +197,24 @@ def import_mzd(file: UploadFile = File(...), commit: bool = Form(False), db: Ses
     if commit:
         audit(db, user, "entitlement_import", 0, "bmc_mzd", {"file": file.filename, "created": res.created,
                                                              "already_imported": res.already_imported})
+        db.commit()
+        from .. import renewal_deals
+        res.renewal_opportunities = renewal_deals.open_renewal_opportunities(db).created  # licences just imported
+    return dataclasses.asdict(res)
+
+
+class RenewalOpportunitiesIn(BaseModel):
+    dry_run: bool = True
+
+
+@router.post("/licences/renewal-opportunities")
+def renewal_opportunities(data: RenewalOpportunitiesIn, db: Session = Depends(get_db),
+                          user: User = Depends(require_admin)):
+    """Open renewal opportunities now for licences renewing soon (it also runs daily on its own)."""
+    from .. import renewal_deals
+    res = renewal_deals.open_renewal_opportunities(db, dry_run=data.dry_run)
+    if not data.dry_run and (res.created or res.added):
+        audit(db, user, "opportunity", 0, "licence_renewals", {"created": res.created, "added": res.added})
         db.commit()
     return dataclasses.asdict(res)
 

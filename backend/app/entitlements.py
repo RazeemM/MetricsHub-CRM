@@ -53,6 +53,7 @@ class Holding:
     resolved_at: dt.datetime | None = None
     lines: list[int] = field(default_factory=list)
     later_purchase: dict | None = None  # lapsed: the customer's latest purchase of another product afterwards
+    renewal_opportunity_id: int | None = None  # the renewal opportunity opened for the coming renewal
 
 
 INSTALMENT_DAYS = 200  # a paid period shorter than this (quarterly, half-yearly) is a billing instalment, not a term
@@ -69,7 +70,8 @@ def _holding(lines: list[Entitlement], today: dt.date, notice_days: int, report_
         license_type=latest.license_type, reseller=reseller, latest_line_id=latest.id,
         resolved=latest.lapse_resolved_at is not None, resolution=latest.lapse_resolution,
         resolved_by=latest.lapse_resolved_by.full_name if latest.lapse_resolved_by else None,
-        resolved_at=latest.lapse_resolved_at, lines=[e.id for e in lines])
+        resolved_at=latest.lapse_resolved_at, lines=[e.id for e in lines],
+        renewal_opportunity_id=getattr(latest, "renewal_opportunity_id", None))
     if latest.license_type == "perpetual":
         # owned for good: no renewal date, never lapses (its maintenance is a separate Support licence)
         qty = sum((e.quantity for e in lines), Decimal(0))
@@ -143,6 +145,7 @@ class ImportResult:
     fees_filled: int = 0  # already-imported lines that got their Sentry fee from this report
     countries_filled: int = 0  # already-imported lines that got their Sold To Country from this report
     lapsed_closed: int = 0  # lapsed licences this report shows were renewed
+    renewal_opportunities: int = 0  # renewal opportunities opened after the import
     accounts_matched: dict = field(default_factory=dict)   # report name -> CRM account name
     accounts_created: list = field(default_factory=list)
     resellers: dict = field(default_factory=dict)
