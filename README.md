@@ -547,6 +547,8 @@ MetricsHub's own HTTP and Linux monitoring of the VM (CPU, memory, file systems)
 
 ## Project layout
 
+For architecture, deployment, configuration and how to extend the CRM, see the [developer's guide](docs/DEVELOPERS_GUIDE.md).
+
 ```
 backend/
   app/models.py        data model (accounts, contacts, products, price books, pipelines, opportunities…)
